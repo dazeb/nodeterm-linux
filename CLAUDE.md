@@ -145,6 +145,10 @@ shell PATH; `TMUX`/`TMUX_PANE` are stripped from the child env to avoid nesting 
 - **group** (`GroupNode.tsx`) — real React Flow parent/child frame; `groupSelectedNodes`
   reparents children (`parentId` + `extent:'parent'`, relative positions), `ungroupNodes`
   restores absolute. `nodeStatesToFlow` sorts parents first (React Flow requirement).
+  Visually: a dashed rounded frame in the group color with a floating label pill (color dot
+  + editable name) on the top border and ungroup/× top-right (on hover/selected). The
+  `NodeResizer` line is hidden (`lineStyle` transparent) so it can't draw a sharp-cornered
+  box; the selection ring is a `box-shadow` instead, which follows the same `border-radius`.
 - **editor** (`EditorNode.tsx`) — Monaco code editor for a `filePath`; reads/writes via
   `fs:read`/`fs:write`, auto-detects language from the path, ⌘S saves, dirty dot. A
   **Preview / Edit** toggle (or ⌘M while hovered) renders the live content as markdown.
