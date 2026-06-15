@@ -148,6 +148,9 @@ shell PATH; `TMUX`/`TMUX_PANE` are stripped from the child env to avoid nesting 
 - **editor** (`EditorNode.tsx`) — Monaco code editor for a `filePath`; reads/writes via
   `fs:read`/`fs:write`, auto-detects language from the path, ⌘S saves, dirty dot. A
   **Preview / Edit** toggle (or ⌘M while hovered) renders the live content as markdown.
+  **Image files** (png/jpg/gif/webp/bmp/ico/svg/avif) skip Monaco and show an `<img>`
+  preview instead — read as base64 via `fs:read-binary` into a `data:` URL (CSP allows
+  `img-src data:`), on a checkerboard backdrop with the pixel dimensions in the header.
 - **diff** (`DiffNode.tsx`) — Monaco diff editor; `diffStaged` chooses HEAD↔index (staged)
   vs index↔working (unstaged) via `git:show-file` + `fs:read`. Read-only.
 
