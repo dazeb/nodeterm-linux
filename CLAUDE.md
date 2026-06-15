@@ -52,23 +52,28 @@ adding terminal-session features, extend the interface — do not reach around i
 
 ## State & persistence model
 
-**React Flow is the single live source of truth** for nodes (position, size, and the
-`data` payload: title, color, group, shell, cwd, text). There is intentionally no separate
-store mirroring node state — earlier dual-source designs caused sync bugs.
-`src/renderer/state/workspace.ts` holds only pure helpers: the color palette,
-`createTerminalNode` / `createStickyNode`, and `nodesToWorkspace` / `workspaceToNodes`
-serializers. Node types are `'terminal'` and `'sticky'`; `workspaceToNodes` defaults a
-missing `kind` to `'terminal'` for backward compat with older `workspace.json` files.
+**React Flow is the single live source of truth** for nodes. There is intentionally no
+separate store mirroring node state — earlier dual-source designs caused sync bugs.
+`src/renderer/state/workspace.ts` holds only pure helpers: the color palette, the node
+factories (`createTerminalNode`, `createClaudeNode`, `createStickyNode`, `createGroupNode`,
+`createEditorNode`, `createDiffNode`), the group transforms (`groupSelectedNodes`,
+`ungroupNodes`, `duplicateNode`), and the `nodeStatesToFlow` / `flowToNodeStates`
+serializers. Node kinds: `terminal | sticky | group | editor | diff`. A node's `data`
+carries `title, color, group, tags, collapsed, expandedHeight, shell, cwd, text,
+initialCommand, filePath, diffStaged`. `nodeStatesToFlow` defaults a missing `kind` to
+`terminal` for backward compat.
 
 Persistence has two layers:
 
 - **Layout + config** (`workspace.json`, schema v2): a list of **projects**, each with its
   own `nodes`, `viewport`, `color`, and default `cwd`, plus the `activeProjectId`. Auto-saved
   on a debounce (and via the dock Save button). Lives in `app.getPath('userData')`.
-  `main/workspace-store.ts` migrates older v1 single-canvas files into one default project
-  on load; the renderer re-saves the migrated form on launch.
+  `main/workspace-store.ts` migrates v1 single-canvas files into one project; an **empty**
+  project list is valid and persisted (→ welcome screen). The renderer re-saves on launch.
 - **Live terminal sessions** (tmux): terminals continue where they left off across node
   remounts *and* full app restarts, including running processes. See below.
+
+`settings.json` is a separate store (`main/settings-store.ts`, `state/settings.ts`).
 
 ## Projects (tabs)
 
@@ -85,9 +90,11 @@ project's nodes only.** The contract:
   the sessions keep running; switching back reattaches. tmux session names are per-node-id
   (globally unique), so projects never collide.
 - Deleting a project calls `transport.destroy(nodeId)` for each of its terminals (ending
-  their tmux sessions); the last project can't be deleted.
-- A project's `cwd` (set via the native folder picker, `dialog:select-folder` IPC) is passed
-  to `createTerminalNode` so new terminals open there.
+  their tmux sessions). Deleting the **last** project is allowed → projects empty →
+  `WelcomeScreen` (New project / Open folder / Clone repo).
+- A project's `cwd` (folder picker, `dialog:select-folder`) is passed to terminal/Claude
+  node factories so new terminals open there. **Folder ↔ project is deduped:** "Open folder…"
+  reuses the existing project with that `cwd` (and its nodes) instead of creating a duplicate.
 
 ## Terminal session continuity (tmux)
 
@@ -118,36 +125,94 @@ shell PATH; `TMUX`/`TMUX_PANE` are stripped from the child env to avoid nesting 
   `id` — never change a node's id, or you'll respawn its terminal.
 - **React StrictMode is deliberately not used** (`main.tsx`) — double-mount would spawn
   two PTYs per node.
-- The terminal body div carries `nodrag nowheel` so clicks/scroll go to xterm instead of
-  dragging the node or zooming the canvas. The header stays draggable.
+- The xterm container is `nodrag nowheel`; a transparent **hover-guard** overlay sits on top
+  until you dwell `settings.panHoverDelay` (so quick drag = move node, scroll = pan). After
+  the dwell the guard is removed and xterm takes input. The header stays draggable.
 - A `ResizeObserver` drives `FitAddon.fit()` + `transport.resize`. Canvas zoom is a CSS
-  transform, so it does *not* change `clientWidth` — cols/rows stay stable across zoom by
-  design.
+  transform, so it does *not* change `clientWidth` — cols/rows stay stable across zoom.
+  `scale-fix.ts` patches xterm's mouse coords so text selection stays aligned when zoomed.
 
-## Canvas features & where they live
+## Node kinds (all rendered by React Flow custom nodes)
 
-- **Node model** (`shared/types.ts` `CanvasNodeState`, `renderer/state/workspace.ts` `NodeData`):
-  kinds are `terminal | sticky | group`; nodes carry `tags`, `collapsed`, `parentId`.
-  `nodeStatesToFlow` sorts groups (parents) before children and maps `collapsed` to a
-  shrunk `style.height` (keeping the expanded height in `data.expandedHeight`);
-  `flowToNodeStates` persists the expanded height while collapsed.
-- **Context menus** (`components/ContextMenu.tsx`, portal): `onPaneContextMenu` (new node
-  at cursor, select all, fit), `onNodeContextMenu`/`onSelectionContextMenu` (group, color,
-  align-to-grid, collapse, delete). All actions live in `Canvas.tsx` and operate on the
-  selection (`targetIds`).
-- **Grouping** (`nodes/GroupNode.tsx`, `groupSelectedNodes`/`ungroupNodes` in workspace.ts):
-  real React Flow parent/child; children get `parentId` + `extent:'parent'` and
-  parent-relative positions. Deleting/removing a group reparents children to absolute.
-- **Command palette** (`components/CommandPalette.tsx`): Cmd/Ctrl+K; commands built in
-  `Canvas.buildCommands` (create actions, switch project, jump to node by title/tag).
-- **Settings** (`main/settings-store.ts` + `settings.json`, `state/settings.ts` zustand,
-  `components/SettingsPanel.tsx`): font/cursor (applied live to xterm), default shell, grid
-  size + snap, pan-hover delay, double-click focus, accent (`--accent` CSS var), tmux
-  enabled + scrollback. `PtyManager` reads settings via the getter passed to `init()`.
-- **Source Control** (`main/git-service.ts` using system `git` + `gh`,
-  `components/SourceControlPanel.tsx`): per active-project `cwd` — status/init/commit/
-  push/pull/publish. No file-level diff.
-- **Top-right cluster** in `Canvas.tsx`: palette (⌕), source control (⎇), settings (⚙).
+- **terminal** (`TerminalNode.tsx`) — xterm + tmux (see above). Header: collapse, color,
+  click-to-rename title, ✦ AI-name, ×. Body has a **hover guard** overlay: dwell
+  `settings.panHoverDelay` (default 600 ms) before the terminal takes focus — before that,
+  drag = move node, scroll = pan canvas. **Cmd/Ctrl+M** (while hovered) toggles a markdown
+  render of the captured output. Tag chips via `NodeTags`.
+- **Claude Code** (`createClaudeNode`) — a terminal preset with `initialCommand: 'claude'`
+  (runs once on open via `transport.write`, then cleared); clay color, `claude` tag.
+- **sticky** (`StickyNode.tsx`) — colored note, free text, collapsible.
+- **group** (`GroupNode.tsx`) — real React Flow parent/child frame; `groupSelectedNodes`
+  reparents children (`parentId` + `extent:'parent'`, relative positions), `ungroupNodes`
+  restores absolute. `nodeStatesToFlow` sorts parents first (React Flow requirement).
+- **editor** (`EditorNode.tsx`) — Monaco code editor for a `filePath`; reads/writes via
+  `fs:read`/`fs:write`, auto-detects language from the path, ⌘S saves, dirty dot. A
+  **Preview / Edit** toggle (or ⌘M while hovered) renders the live content as markdown.
+- **diff** (`DiffNode.tsx`) — Monaco diff editor; `diffStaged` chooses HEAD↔index (staged)
+  vs index↔working (unstaged) via `git:show-file` + `fs:read`. Read-only.
+
+Monaco is wired in `renderer/editor/monaco-setup.ts` (language workers bundled via Vite
+`?worker` — no CDN; CSP `worker-src` allows them). Markdown rendering is shared in
+`renderer/lib/markdown.ts` (`marked` + DOMPurify sanitize).
+
+## Canvas interaction & panels (`Canvas.tsx` is the hub)
+
+- **Context menus** (`components/ContextMenu.tsx`, portal, icons from `components/icons.tsx`):
+  pane right-click = add nodes at cursor (terminal / Claude / sticky / open file) + select
+  all + fit; node/selection right-click = group, color, duplicate, align-to-grid, collapse,
+  markdown-view (terminals), delete. Actions live in `Canvas.tsx`, operate on `targetIds`.
+- **Add menu** = bottom dock (`Dock.tsx`) `+`, mirrored by the pane menu and command palette.
+- **Undo/redo**: debounced snapshot of the nodes array on settle (drag/edit), `pastRef`/
+  `futureRef` stacks, ⌘Z / ⌘⇧Z + dock buttons. History resets per project load; skipped
+  while typing in inputs/terminals.
+- **Selection/pan**: box-select on left-drag (`SelectionMode.Partial` — touch to select);
+  pan = middle-drag or trackpad two-finger (`panOnScroll`, `zoomOnScroll:false`); pinch
+  zoom. Right mouse is free for the context menu.
+- **Delete** (Delete/Backspace) opens `ConfirmDialog` before removing selected nodes.
+- **Command palette** (`CommandPalette.tsx`): ⌘/Ctrl+K; `Canvas.buildCommands` (create,
+  switch project, jump to node by title/tag, open file…).
+- **Explorer** (`ExplorerPanel.tsx`, 🗂 / ⌘⇧E): lazy file tree of the active project `cwd`
+  (`fs:list`); click a file → opens an editor node; right-click → Copy Path / Reveal.
+- **Source Control** (`main/git-service.ts` system `git` + `gh`, `SourceControlPanel.tsx`,
+  ⎇): file-level **stage/unstage** (+/−), **discard**, click a file → **diff node**,
+  **branch switch/create**, commit (message box at top) + push / sync / publish, **gh
+  sign-in** banner (runs `gh auth login` in a new terminal via `initialCommand`), recent
+  commits. **AI commit message** (✦ Generate) and **AI terminal naming** both use
+  `main/commit-message.ts`: a BYO local agent CLI (claude/codex/custom) spawned read-only on
+  the staged diff / captured terminal output (no built-in model); agent + extra prompt in
+  Settings.
+- **Settings** (`SettingsPanel.tsx`, ⚙ / ⌘,): font/cursor (live to xterm + Monaco), default
+  shell, grid + snap, pan-hover delay, double-click focus, accent, tmux on/scrollback,
+  commit agent, `seenShortcuts`.
+- **Shortcuts** (`ShortcutsPanel.tsx`, ? / ⌘/): shown once on first launch (`seenShortcuts`).
+- **Welcome** (`WelcomeScreen.tsx`): shown when no projects exist.
+- **Window chrome**: macOS integrated title bar (`titleBarStyle: 'hiddenInset'`); the tab
+  bar (`TabBar.tsx`) is the drag region with the `nodeterm` logo + a rounded pill of project
+  tabs. Cmd+M is intercepted in `main/index.ts` `before-input-event` (else macOS minimizes)
+  and forwarded to the renderer via `app:toggle-markdown`.
+- **Theme**: macOS dark palette as CSS tokens in `styles.css` `:root` (`--accent` = systemBlue,
+  label/separator opacities, SF font stack). Canvas background is black with dot grid.
+
+## Packaging & auto-update
+
+Distributed as a free, closed-source Mac app (`.dmg`), built with **electron-builder** (config
+in the `package.json` `build` block: appId `com.nodeterm.app`, productName `nodeterm`, mac dmg+zip
+for arm64 **and** x64, `asarUnpack` node-pty, output `dist/`). The app icon is generated from the
+nodeterm mark by `scripts/make-icon.mjs` (sharp → `build/icon.png`, 1024², gitignored — regenerated
+by `make-icon`); electron-builder derives the `.icns`. Scripts: `npm run make-icon`, `npm run dist`
+(local arm64+x64, unsigned), `npm run release` (both arches + `--publish always` to GitHub).
+Signing/notarize is deferred — `mac.identity: null`, `notarize: false`; entitlements ready in
+`build/entitlements.mac.plist`. The `publish` block's `owner`/`repo` are `REPLACE_ME` until the
+GitHub repo is wired.
+
+Auto-update uses **electron-updater** (`src/main/updater.ts`, `initUpdater(win)` from `index.ts`):
+runs **only when `app.isPackaged`** (dev = no-op), checks on launch + every 6h, and forwards
+`update-available` / `update-downloaded` to the renderer over IPC (`app:update-available`,
+`app:update-downloaded`). The renderer's `components/UpdateBanner.tsx` (mounted in `Canvas.tsx`,
+under the tab bar) shows a strip and a **Restart to update** button → `updates.restart()` →
+`app:restart-to-update` → `autoUpdater.quitAndInstall()`. Exposed via `window.nodeTerminal.updates`
+(`UpdateApi` in `shared/types.ts`). Note: macOS *silent* self-install needs a signed+notarized
+build; unsigned builds still surface the banner for a manual download.
 
 ## Conventions
 
