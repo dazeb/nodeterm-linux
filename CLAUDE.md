@@ -200,19 +200,32 @@ in the `package.json` `build` block: appId `com.nodeterm.app`, productName `node
 for arm64 **and** x64, `asarUnpack` node-pty, output `dist/`). The app icon is generated from the
 nodeterm mark by `scripts/make-icon.mjs` (sharp → `build/icon.png`, 1024², gitignored — regenerated
 by `make-icon`); electron-builder derives the `.icns`. Scripts: `npm run make-icon`, `npm run dist`
-(local arm64+x64, unsigned), `npm run release` (both arches + `--publish always` to GitHub).
-Signing/notarize is deferred — `mac.identity: null`, `notarize: false`; entitlements ready in
-`build/entitlements.mac.plist`. The `publish` block's `owner`/`repo` are `REPLACE_ME` until the
-GitHub repo is wired.
+(local **unsigned** arm64 smoke test — forces `-c.mac.identity=null -c.mac.notarize=false`), and
+`npm run release` (signed + notarized arm64+x64, what CI runs). Signing config is on:
+`hardenedRuntime`, `gatekeeperAssess:false`, `notarize:true`, entitlements in
+`build/entitlements.mac.plist`; the Developer ID cert + Apple creds come from env
+(`CSC_LINK`/`CSC_KEY_PASSWORD`/`APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID`).
+
+**Releases are self-hosted.** `build.publish` is the **generic** provider pointed at
+`https://nodeterm.dev/updates`; electron-updater fetches `latest-mac.yml` (+ the `.zip` it
+references) from there. `.dmg` = first-time download (linked from nodeterm.dev); `.zip`+`yml` =
+what auto-update consumes. Release flow (bump version → tag `v*` → CI signs/notarizes → publish
+feed) is documented in **`docs/RELEASING.md`**; CI is `.github/workflows/release.yml` (also keeps a
+canonical GitHub Release copy).
 
 Auto-update uses **electron-updater** (`src/main/updater.ts`, `initUpdater(win)` from `index.ts`):
-runs **only when `app.isPackaged`** (dev = no-op), checks on launch + every 6h, and forwards
-`update-available` / `update-downloaded` to the renderer over IPC (`app:update-available`,
-`app:update-downloaded`). The renderer's `components/UpdateBanner.tsx` (mounted in `Canvas.tsx`,
-under the tab bar) shows a strip and a **Restart to update** button → `updates.restart()` →
-`app:restart-to-update` → `autoUpdater.quitAndInstall()`. Exposed via `window.nodeTerminal.updates`
-(`UpdateApi` in `shared/types.ts`). Note: macOS *silent* self-install needs a signed+notarized
-build; unsigned builds still surface the banner for a manual download.
+runs **only when `app.isPackaged`** (dev = no-op), checks on launch + every 6h, forwards
+`update-available` / `update-downloaded` to the renderer over IPC. `components/UpdateBanner.tsx`
+shows a strip + **Restart to update** → `updates.restart()` → `autoUpdater.quitAndInstall()`.
+Exposed via `window.nodeTerminal.updates` (`UpdateApi`). macOS *silent* self-install requires the
+signed+notarized build; unsigned builds still surface the banner for a manual download.
+
+**In-app announcements** (news, separate from updates): `src/main/announcements.ts` fetches
+`https://nodeterm.dev/announcements.json` from the **main process** (so the renderer CSP stays
+`'self'`), exposed as `window.nodeTerminal.announcements.fetch()`. `components/AnnouncementBanner.tsx`
+(stacked with the update banner under the tab bar in a `.top-banners` column) shows the newest
+item the user hasn't dismissed; dismissed `id`s persist in `localStorage`. Feed schema +
+example: `docs/RELEASING.md` / `docs/announcements.example.json`.
 
 ## Conventions
 
