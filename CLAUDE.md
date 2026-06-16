@@ -171,15 +171,20 @@ Extra behavior for `claude`-tagged terminal nodes, driven by a **transient** zus
 `state/claudeStatus.ts` (`{busy, unread, session}` per node id — **not** persisted, so
 workspace.json stays clean; resets on reload).
 
-- **State via Claude hooks** — detection uses Claude Code's own hooks, **not** output
-  parsing. `main/claude-hooks.ts` writes a hooks-only settings file and the PTY manager
-  launches Claude with `--settings "$NODETERM_CLAUDE_SETTINGS"` (non-invasive; per-session
-  env `NODETERM_NODE_ID`/`NODETERM_HOOK_DIR` set via tmux `new-session -e`). Each hook
-  (`UserPromptSubmit`→working, `Stop`→idle, `Notification`→needs-input, `SessionStart`/`End`)
-  appends its JSON payload to `<userData>/claude-signals/<nodeId>.log`; main watches that dir
-  and forwards `{nodeId, event, sessionId}` over `claude:status`. Canvas's listener drives
-  the store (busy/unread/notify) and records the session id. Header shows a pulsing
-  **RUNNING** badge while busy.
+- **State via Claude hooks** (REF-style) — detection uses Claude Code's own hooks, **not**
+  output parsing. `main/claude-hooks.ts` installs ONE managed, env-gated hook command into the
+  user's `~/.claude/settings.json` (merged, preserving existing hooks incl. other tools';
+  idempotent). The command is `[ -z "$NODETERM_NODE_ID" ] && exit 0; … >> <signal>/<id>.log`
+  — a no-op in the user's normal terminals, active only in sessions nodeterm spawns (which set
+  `NODETERM_NODE_ID`/`NODETERM_HOOK_DIR` via tmux `new-session -e`). So **any** `claude` run
+  inside nodeterm is detected, even one typed by hand — not just the managed Claude Code node.
+  Each hook appends its JSON payload to `<userData>/claude-signals/<nodeId>.log`; main watches
+  (+ polls, since fs.watch misses appends on macOS) and forwards `{nodeId, event, sessionId,
+  notificationType}` over `claude:status`. Canvas's listener maps events to a 4-state model
+  (`UserPromptSubmit`→working, `Stop`→done, `Notification`→waiting/blocked) in the
+  `claudeStatus` store, fires throttled (5s/node) background notifications, and records the
+  session id. Header shows a pulsing **RUNNING** (working) / **NEEDS YOU** (waiting/blocked)
+  badge; `state` is transient while `unread`/`session`/`sessionId` persist in localStorage.
 - **Unread + notification** — on a busy→idle edge while the window is unfocused
   (`document.hasFocus()`), the node is marked unread (header dot, minimap stroke, project-tab
   dot). If notifications are enabled, `window.nodeTerminal.notify()` → main `app:notify`
