@@ -140,7 +140,10 @@ shell PATH; `TMUX`/`TMUX_PANE` are stripped from the child env to avoid nesting 
   drag = move node, scroll = pan canvas. **Cmd/Ctrl+M** (while hovered) toggles a markdown
   render of the captured output. Tag chips via `NodeTags`.
 - **Claude Code** (`createClaudeNode`) — a terminal preset with `initialCommand: 'claude'`
-  (runs once on open via `transport.write`, then cleared); clay color, `claude` tag.
+  (runs once on open via `transport.write`, then cleared); clay color, `claude` tag. Claude
+  nodes get extra behavior (see **Claude Code support** below): a busy/working badge, an
+  unread dot, a completion notification, a session-name chip, content search, and a
+  **Branch conversation** action.
 - **sticky** (`StickyNode.tsx`) — colored note, free text, collapsible.
 - **group** (`GroupNode.tsx`) — real React Flow parent/child frame; `groupSelectedNodes`
   reparents children (`parentId` + `extent:'parent'`, relative positions), `ungroupNodes`
@@ -161,6 +164,34 @@ shell PATH; `TMUX`/`TMUX_PANE` are stripped from the child env to avoid nesting 
 Monaco is wired in `renderer/editor/monaco-setup.ts` (language workers bundled via Vite
 `?worker` — no CDN; CSP `worker-src` allows them). Markdown rendering is shared in
 `renderer/lib/markdown.ts` (`marked` + DOMPurify sanitize).
+
+## Claude Code support
+
+Extra behavior for `claude`-tagged terminal nodes, driven by a **transient** zustand store
+`state/claudeStatus.ts` (`{busy, unread, session}` per node id — **not** persisted, so
+workspace.json stays clean; resets on reload).
+
+- **Busy / working** — `terminal/claudeBusy.ts` (`createClaudeBusyDetector`) watches the
+  output stream (fed from `transport.onData` in `TerminalNode`) for Claude's working line
+  (`esc to interrupt` / spinner glyphs); busy while it recurs, idle after a quiet window
+  (sooner on a terminal bell). Header shows a pulsing **RUNNING** badge.
+- **Unread + notification** — on a busy→idle edge while the window is unfocused
+  (`document.hasFocus()`), the node is marked unread (header dot, minimap stroke, project-tab
+  dot). If notifications are enabled, `window.nodeTerminal.notify()` → main `app:notify`
+  (shown only when `mainWin.isFocused()` is false); clicking it focuses the window and sends
+  `app:focus-node` → `Canvas.focusNodeById` (selects + centers, switching projects via
+  `pendingFocusRef` if needed). A one-time consent prompt gates notifications; toggle in
+  Settings (`notifyOnClaudeDone`). Unread clears on focus/select.
+- **Session name** — Claude's terminal title (via `term.onTitleChange`, filtered to non-path
+  strings) is stored as `session` and shown as a chip beside the editable title.
+- **Search** — the command palette (⌘K) matches the session name + tags + `nt-<id>` in the
+  hint, and substring-searches each terminal's **visible buffer** (captured via `pty.capture`
+  on palette open, cached ~3s); content matches show "found in output".
+- **Branch conversation** — node action (`IconBranch`, Claude-only) in `lib/claudeBranch.ts`:
+  sends `/branch` into the existing terminal via `pty.sendText` (tmux `send-keys`), polls
+  `pty.capture` to parse the original session id, then opens a new Claude node running
+  `claude -r <ORIGINAL_ID>` (the source node stays on the new branch). `pty.sendText` and
+  the notify/focus channels are the new IPC added for this.
 
 ## Canvas interaction & panels (`Canvas.tsx` is the hub)
 
