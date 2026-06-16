@@ -179,8 +179,9 @@ workspace.json stays clean; resets on reload).
   `NODETERM_NODE_ID`/`NODETERM_HOOK_DIR` via tmux `new-session -e`). So **any** `claude` run
   inside nodeterm is detected, even one typed by hand — not just the managed Claude Code node.
   Each hook appends its JSON payload to `<userData>/claude-signals/<nodeId>.log`; main watches
-  (+ polls, since fs.watch misses appends on macOS) and forwards `{nodeId, event, sessionId,
-  notificationType}` over `claude:status`. Canvas's listener maps events to a 4-state model
+  the dir (event-driven `fs.watch`, no polling — verified to fire on appends; offset-based reads
+  so each line is delivered once) and forwards `{nodeId, event, sessionId, notificationType,
+  lastMessage}` over `claude:status`. Canvas's listener maps events to a 4-state model
   (`UserPromptSubmit`→working, `Stop`→done, `Notification`→waiting/blocked) in the
   `claudeStatus` store, fires throttled (5s/node) background notifications, and records the
   session id. Header shows a pulsing **RUNNING** (working) / **NEEDS YOU** (waiting/blocked)
