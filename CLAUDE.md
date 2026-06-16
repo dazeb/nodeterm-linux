@@ -171,10 +171,15 @@ Extra behavior for `claude`-tagged terminal nodes, driven by a **transient** zus
 `state/claudeStatus.ts` (`{busy, unread, session}` per node id — **not** persisted, so
 workspace.json stays clean; resets on reload).
 
-- **Busy / working** — `terminal/claudeBusy.ts` (`createClaudeBusyDetector`) watches the
-  output stream (fed from `transport.onData` in `TerminalNode`) for Claude's working line
-  (`esc to interrupt` / spinner glyphs); busy while it recurs, idle after a quiet window
-  (sooner on a terminal bell). Header shows a pulsing **RUNNING** badge.
+- **State via Claude hooks** — detection uses Claude Code's own hooks, **not** output
+  parsing. `main/claude-hooks.ts` writes a hooks-only settings file and the PTY manager
+  launches Claude with `--settings "$NODETERM_CLAUDE_SETTINGS"` (non-invasive; per-session
+  env `NODETERM_NODE_ID`/`NODETERM_HOOK_DIR` set via tmux `new-session -e`). Each hook
+  (`UserPromptSubmit`→working, `Stop`→idle, `Notification`→needs-input, `SessionStart`/`End`)
+  appends its JSON payload to `<userData>/claude-signals/<nodeId>.log`; main watches that dir
+  and forwards `{nodeId, event, sessionId}` over `claude:status`. Canvas's listener drives
+  the store (busy/unread/notify) and records the session id. Header shows a pulsing
+  **RUNNING** badge while busy.
 - **Unread + notification** — on a busy→idle edge while the window is unfocused
   (`document.hasFocus()`), the node is marked unread (header dot, minimap stroke, project-tab
   dot). If notifications are enabled, `window.nodeTerminal.notify()` → main `app:notify`
@@ -187,11 +192,11 @@ workspace.json stays clean; resets on reload).
 - **Search** — the command palette (⌘K) matches the session name + tags + `nt-<id>` in the
   hint, and substring-searches each terminal's **visible buffer** (captured via `pty.capture`
   on palette open, cached ~3s); content matches show "found in output".
-- **Branch conversation** — node action (`IconBranch`, Claude-only) in `lib/claudeBranch.ts`:
-  sends `/branch` into the existing terminal via `pty.sendText` (tmux `send-keys`), polls
-  `pty.capture` to parse the original session id, then opens a new Claude node running
-  `claude -r <ORIGINAL_ID>` (the source node stays on the new branch). `pty.sendText` and
-  the notify/focus channels are the new IPC added for this.
+- **Branch conversation** — node action (`IconBranch`, Claude-only): sends `/branch` into the
+  existing terminal via `pty.sendText` (tmux `send-keys`) and opens a new Claude node that
+  resumes the parked original with `claude --settings … -r <ORIGINAL_ID>`. The original id is
+  the session id already known from hooks; `lib/claudeBranch.ts` is the fallback that parses
+  `pty.capture` output when the id isn't known. The source node stays on the new branch.
 
 ## Canvas interaction & panels (`Canvas.tsx` is the hub)
 
