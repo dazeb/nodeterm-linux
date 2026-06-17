@@ -211,7 +211,7 @@ workspace.json stays clean; resets on reload).
   `.meta.json`), tails it read-only, formats each line (assistant text + tool calls + results),
   and streams chunks over `claude:subagent-activity` into the store.
 - **/loop & /schedule node** — heuristic: `UserPromptSubmit` whose prompt starts with `/loop`
-  or `/schedule` sets `claudeStatus.loop` ({count, prompt, items, kind}); each `Stop` bumps the
+  , `/schedule` or `/cron` sets `claudeStatus.loop` ({count, prompt, items, kind}); each `Stop` bumps the
   count and appends that turn's `lastMessage`; cleared on `SessionEnd`. Renders an ephemeral
   **LoopNode** labelled Loop/Schedule (`×N` + expandable iteration list) connected by an edge to
   the parent, plus a small **LOOP/SCHEDULE ×N** header badge.
