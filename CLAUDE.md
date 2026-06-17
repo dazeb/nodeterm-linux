@@ -205,6 +205,11 @@ workspace.json stays clean; resets on reload).
   live outside the React Flow `nodes` state (merged only at the `<ReactFlow>` prop), so they're
   never persisted (`flowToNodeStates`) nor in undo/dirty. Fan-out is cleared on the next
   `UserPromptSubmit` / `SessionEnd` / node close. (Subagents share the parent's process — no PTY.)
+  Each card shows duration/tokens/tool-uses and **expands** (click) to a **live transcript**:
+  `main/subagent-tail.ts` resolves the subagent's own transcript file
+  (`<…>/<sessionId>/subagents/agent-<id>.jsonl`, matched by `tool_use_id` via the sibling
+  `.meta.json`), tails it read-only, formats each line (assistant text + tool calls + results),
+  and streams chunks over `claude:subagent-activity` into the store.
 - **/loop badge** — heuristic: `UserPromptSubmit` whose prompt starts with `/loop` sets
   `claudeStatus.loop`; each `Stop` bumps the count; cleared on `SessionEnd`. Shows a **LOOP ×N**
   header badge.
