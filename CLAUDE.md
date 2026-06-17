@@ -198,6 +198,16 @@ workspace.json stays clean; resets on reload).
 - **Search** — the command palette (⌘K) matches the session name + tags + `nt-<id>` in the
   hint, and substring-searches each terminal's **visible buffer** (captured via `pty.capture`
   on palette open, cached ~3s); content matches show "found in output".
+- **Subagent visualization** — `PreToolUse`/`PostToolUse` hooks (tool `Agent`/`Task`,
+  correlated by `tool_use_id`) drive a transient `state/agentNodes.ts` store. Canvas renders
+  each subagent as an **ephemeral** `SubagentNode` (display-only card: type + task +
+  working/done) connected by an **edge** to its parent Claude node. These ephemeral nodes/edges
+  live outside the React Flow `nodes` state (merged only at the `<ReactFlow>` prop), so they're
+  never persisted (`flowToNodeStates`) nor in undo/dirty. Fan-out is cleared on the next
+  `UserPromptSubmit` / `SessionEnd` / node close. (Subagents share the parent's process — no PTY.)
+- **/loop badge** — heuristic: `UserPromptSubmit` whose prompt starts with `/loop` sets
+  `claudeStatus.loop`; each `Stop` bumps the count; cleared on `SessionEnd`. Shows a **LOOP ×N**
+  header badge.
 - **Branch conversation** — node action (`IconBranch`, Claude-only): sends `/branch` into the
   existing terminal via `pty.sendText` (tmux `send-keys`) and opens a new Claude node that
   resumes the parked original with `claude --settings … -r <ORIGINAL_ID>`. The original id is
