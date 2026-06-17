@@ -210,11 +210,11 @@ workspace.json stays clean; resets on reload).
   (`<…>/<sessionId>/subagents/agent-<id>.jsonl`, matched by `tool_use_id` via the sibling
   `.meta.json`), tails it read-only, formats each line (assistant text + tool calls + results),
   and streams chunks over `claude:subagent-activity` into the store.
-- **/loop node** — heuristic: `UserPromptSubmit` whose prompt starts with `/loop` sets
-  `claudeStatus.loop` (prompt + per-iteration summaries); each `Stop` bumps the count and
-  appends that turn's `lastMessage`; cleared on `SessionEnd`. Renders an ephemeral **LoopNode**
-  (`×N` + expandable iteration list) connected by an edge to the parent, plus a small **LOOP ×N**
-  header badge.
+- **/loop & /schedule node** — heuristic: `UserPromptSubmit` whose prompt starts with `/loop`
+  or `/schedule` sets `claudeStatus.loop` ({count, prompt, items, kind}); each `Stop` bumps the
+  count and appends that turn's `lastMessage`; cleared on `SessionEnd`. Renders an ephemeral
+  **LoopNode** labelled Loop/Schedule (`×N` + expandable iteration list) connected by an edge to
+  the parent, plus a small **LOOP/SCHEDULE ×N** header badge.
 - **Branch conversation** — node action (`IconBranch`, Claude-only): sends `/branch` into the
   existing terminal via `pty.sendText` (tmux `send-keys`) and opens a new Claude node that
   resumes the parked original with `claude --settings … -r <ORIGINAL_ID>`. The original id is
