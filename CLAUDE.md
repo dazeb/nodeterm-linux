@@ -328,3 +328,7 @@ example: `docs/RELEASING.md` / `docs/announcements.example.json`.
 
 - Code comments, UI strings, and identifiers are all in **English**. Match this when editing.
 - Path aliases: `@shared/*`, `@renderer/*` (see the tsconfig files / vite config).
+- **Subagent model:** when dispatching subagents (implementers, reviewers, etc. — e.g. in
+  the subagent-driven-development workflow), use the latest model, **Opus 4.8**
+  (`claude-opus-4-8`). This overrides any cheaper-model defaults in a skill's model-selection
+  guidance.
