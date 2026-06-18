@@ -55,13 +55,15 @@ adding terminal-session features, extend the interface — do not reach around i
 **React Flow is the single live source of truth** for nodes. There is intentionally no
 separate store mirroring node state — earlier dual-source designs caused sync bugs.
 `src/renderer/state/workspace.ts` holds only pure helpers: the color palette, the node
-factories (`createTerminalNode`, `createClaudeNode`, `createStickyNode`, `createGroupNode`,
+factories (`createTerminalNode`, `createAgentNode(agentId, …)` — with `createClaudeNode` kept
+as a thin `createAgentNode('claude', …)` wrapper, `createStickyNode`, `createGroupNode`,
 `createEditorNode`, `createDiffNode`), the group transforms (`groupSelectedNodes`,
 `ungroupNodes`, `duplicateNode`), and the `nodeStatesToFlow` / `flowToNodeStates`
 serializers. Node kinds: `terminal | sticky | group | editor | diff`. A node's `data`
 carries `title, color, group, tags, collapsed, expandedHeight, shell, cwd, text,
-initialCommand, filePath, diffStaged`. `nodeStatesToFlow` defaults a missing `kind` to
-`terminal` for backward compat.
+initialCommand, filePath, diffStaged`, and `agentId` (which agent CLI a terminal node runs —
+persisted). `nodeStatesToFlow` defaults a missing `kind` to `terminal` for backward compat and
+migrates the legacy `tags:['claude']` marker to `data.agentId = 'claude'`.
 
 Persistence has two layers:
 
@@ -139,11 +141,14 @@ shell PATH; `TMUX`/`TMUX_PANE` are stripped from the child env to avoid nesting 
   `settings.panHoverDelay` (default 600 ms) before the terminal takes focus — before that,
   drag = move node, scroll = pan canvas. **Cmd/Ctrl+M** (while hovered) toggles a markdown
   render of the captured output. Tag chips via `NodeTags`.
-- **Claude Code** (`createClaudeNode`) — a terminal preset with `initialCommand: 'claude'`
-  (runs once on open via `transport.write`, then cleared); clay color, `claude` tag. Claude
-  nodes get extra behavior (see **Claude Code support** below): a busy/working badge, an
-  unread dot, a completion notification, a session-name chip, content search, and a
-  **Branch conversation** action.
+- **Agent** (`createAgentNode(agentId, …)`) — a terminal preset that runs an agent CLI as its
+  `initialCommand` (runs once on open via `transport.write`, then cleared), with `data.agentId`
+  set. Builtins (`claude`/`codex`/`gemini`) come from `AGENT_CONFIG` (clay color etc.);
+  `createClaudeNode` is the `'claude'` wrapper. Agent nodes get extra behavior **gated by the
+  agent's capabilities** (see **Agent support** below): a busy/working badge + unread dot +
+  completion notification + session-name chip (hook-capable agents), content search, and the
+  Claude-only **Branch conversation** action. Custom user-defined agents spawn + show
+  process/terminal-title status only.
 - **sticky** (`StickyNode.tsx`) — colored note, free text, collapsible.
 - **group** (`GroupNode.tsx`) — real React Flow parent/child frame; `groupSelectedNodes`
   reparents children (`parentId` + `extent:'parent'`, relative positions), `ungroupNodes`
@@ -165,27 +170,48 @@ Monaco is wired in `renderer/editor/monaco-setup.ts` (language workers bundled v
 `?worker` — no CDN; CSP `worker-src` allows them). Markdown rendering is shared in
 `renderer/lib/markdown.ts` (`marked` + DOMPurify sanitize).
 
-## Claude Code support
+## Agent support (Claude / Codex / Gemini / custom)
 
-Extra behavior for `claude`-tagged terminal nodes, driven by a **transient** zustand store
-`state/claudeStatus.ts` (`{busy, unread, session}` per node id — **not** persisted, so
-workspace.json stays clean; resets on reload).
+The app is a pluggable multi-agent system (REF-faithful): Claude Code is one builtin of
+several. Extra terminal-node behavior is driven per agent by a registry + capability lists, a
+shared 4-state model, and a **transient** zustand store `state/agentStatus.ts`
+(`{state, agentId, unread, session, sessionId, loop}` per node id; the live `state` is **not**
+persisted — only `unread`/`session`/`sessionId` go to localStorage under
+`nodeterm.agentStatus`, migrated once from the legacy `nodeterm.claudeStatus` key).
 
-- **State via Claude hooks** (REF-style) — detection uses Claude Code's own hooks, **not**
-  output parsing. `main/claude-hooks.ts` installs ONE managed, env-gated hook command into the
-  user's `~/.claude/settings.json` (merged, preserving existing hooks incl. other tools';
-  idempotent). The command is `[ -z "$NODETERM_NODE_ID" ] && exit 0; … >> <signal>/<id>.log`
-  — a no-op in the user's normal terminals, active only in sessions nodeterm spawns (which set
-  `NODETERM_NODE_ID`/`NODETERM_HOOK_DIR` via tmux `new-session -e`). So **any** `claude` run
-  inside nodeterm is detected, even one typed by hand — not just the managed Claude Code node.
-  Each hook appends its JSON payload to `<userData>/claude-signals/<nodeId>.log`; main watches
-  the dir (event-driven `fs.watch`, no polling — verified to fire on appends; offset-based reads
-  so each line is delivered once) and forwards `{nodeId, event, sessionId, notificationType,
-  lastMessage}` over `claude:status`. Canvas's listener maps events to a 4-state model
-  (`UserPromptSubmit`→working, `Stop`→done, `Notification`→waiting/blocked) in the
-  `claudeStatus` store, fires throttled (5s/node) background notifications, and records the
-  session id. Header shows a pulsing **RUNNING** (working) / **NEEDS YOU** (waiting/blocked)
-  badge; `state` is transient while `unread`/`session`/`sessionId` persist in localStorage.
+- **Agent registry + capabilities** — `src/shared/agents/config.ts` holds `AGENT_CONFIG`
+  (claude/codex/gemini: id, label, spawn command, color, …) keyed by an **open** `AgentId`
+  type (so custom ids fit). Capabilities are membership lists, not flags:
+  `AGENT_HOOK_TARGETS`, `RESUMABLE_AGENTS`, `SUBAGENT_CAPABLE`, `RECURRING_CAPABLE`,
+  `BRANCH_CAPABLE`, `BRIDGE_CAPABLE`, `USAGE_CAPABLE`, with helpers (`hasHooks`, `canBranch`,
+  …). Branch, Session Bridge and the usage indicator stay **Claude-only** purely by being in
+  only `BRANCH_CAPABLE` / `BRIDGE_CAPABLE` / `USAGE_CAPABLE`. UI gates on these helpers — no
+  hardcoded `=== 'claude'`. **Custom agents** (user-defined in Settings, `customAgents`) are in
+  no capability list: spawn + terminal-title + process status only.
+- **State via each agent's hooks → shared 4-state model** — detection uses the agent's own
+  hooks, **not** output parsing. `src/shared/agents/normalize.ts` has per-agent normalizers
+  (`normalizeClaude`/`normalizeCodex`/`normalizeGemini`) that map each agent's native hook
+  events to a `NormalizedAgentEvent` over the shared `AgentState` (`working | waiting | blocked
+  | done`) plus subagent/recurring/session kinds. Canvas's listener consumes
+  `NormalizedAgentEvent` from `agent:status`, drives the `agentStatus` store, fires throttled
+  (5s/node) background notifications, and records the session id. Header shows a pulsing
+  **RUNNING** (working) / **NEEDS YOU** (waiting/blocked) badge.
+- **Hook server (loopback HTTP)** — `src/main/agents/hook-server.ts` is a main-process
+  loopback HTTP server (per-session bearer token, fail-open) that the installed hook scripts
+  POST to; it replaced the old `fs.watch` signal-log mechanism. `buildPtyEnv` injects the
+  node id + endpoint/token into each spawned session's env; because tmux sessions **outlive
+  the app**, the server also writes `<userData>/hook-endpoint.env` so a relaunched main
+  process re-advertises the same endpoint (restart handoff). A `setRawListener` channel feeds
+  the per-node context-window meter (`context-tail.ts`) and subagent live-transcript
+  (`subagent-tail.ts`) for claude.
+- **Hook installers** — `src/main/agents/hooks/` holds per-agent hook services + an installer
+  registry `MANAGED_HOOK_INSTALLERS`. `managed-script.ts` builds the POSIX hook script that
+  POSTs to the server (env-gated: a no-op in the user's normal terminals, active only in
+  sessions nodeterm spawns; the `claude-signals` string is kept as the idempotency marker that
+  migrates users off the old hook). claude → `~/.claude/settings.json` and gemini →
+  `~/.gemini/settings.json` (shared `install-helper.ts`, merged/idempotent, preserving other
+  tools' hooks); codex → `~/.codex/hooks.json` + `~/.codex/config.toml` trust entries
+  (`codex-trust.ts`, ported from REF — the hash gates whether codex runs the hook).
 - **Unread + notification** — on a busy→idle edge while the window is unfocused
   (`document.hasFocus()`), the node is marked unread (header dot, minimap stroke, project-tab
   dot). If notifications are enabled, `window.nodeTerminal.notify()` → main `app:notify`
@@ -198,27 +224,29 @@ workspace.json stays clean; resets on reload).
 - **Search** — the command palette (⌘K) matches the session name + tags + `nt-<id>` in the
   hint, and substring-searches each terminal's **visible buffer** (captured via `pty.capture`
   on palette open, cached ~3s); content matches show "found in output".
-- **Subagent visualization** — `PreToolUse`/`PostToolUse` hooks (tool `Agent`/`Task`,
-  correlated by `tool_use_id`) drive a transient `state/agentNodes.ts` store. Canvas renders
-  each subagent as an **ephemeral** `SubagentNode` (display-only card: type + task +
-  working/done) connected by an **edge** to its parent Claude node. These ephemeral nodes/edges
-  live outside the React Flow `nodes` state (merged only at the `<ReactFlow>` prop), so they're
-  never persisted (`flowToNodeStates`) nor in undo/dirty. Fan-out is cleared on the next
-  `UserPromptSubmit` / `SessionEnd` / node close. (Subagents share the parent's process — no PTY.)
-  Each card shows duration/tokens/tool-uses and **expands** (click) to a **live transcript**:
+- **Subagent visualization** (agents in `SUBAGENT_CAPABLE`) — `subagent-start`/`subagent-end`
+  normalized events (from Claude's `PreToolUse`/`PostToolUse` on tool `Agent`/`Task`, correlated
+  by `tool_use_id`) drive a transient `state/agentNodes.ts` store. Canvas renders each subagent
+  as an **ephemeral** `SubagentNode` (display-only card: type + task + working/done) connected by
+  an **edge** to its parent agent node. These ephemeral nodes/edges live outside the React Flow
+  `nodes` state (merged only at the `<ReactFlow>` prop), so they're never persisted
+  (`flowToNodeStates`) nor in undo/dirty. Fan-out is cleared on the next new turn / session-end /
+  node close. (Subagents share the parent's process — no PTY.) Each card shows
+  duration/tokens/tool-uses and **expands** (click) to a **live transcript**:
   `main/subagent-tail.ts` resolves the subagent's own transcript file
   (`<…>/<sessionId>/subagents/agent-<id>.jsonl`, matched by `tool_use_id` via the sibling
   `.meta.json`), tails it read-only, formats each line (assistant text + tool calls + results),
-  and streams chunks over `claude:subagent-activity` into the store.
-- **/loop, /schedule & /cron node** — detected from the **tools** Claude invokes (robust;
-  users often phrase it in natural language so the prompt rarely starts with the slash):
-  `PreToolUse` for `Skill` (skill ∈ loop/schedule/cron), `CronCreate` (→ cron, label = cron
-  expr · prompt), or `ScheduleWakeup` (→ loop) — plus a `UserPromptSubmit` `/loop|/schedule|/cron`
-  prompt-prefix fallback. Sets `claudeStatus.loop` ({count, prompt, items, kind}); for in-session
-  `loop` each `Stop` bumps the count + appends `lastMessage` (schedule/cron run in the background,
-  so they aren't counted). Cleared on `SessionEnd`. Renders an ephemeral **LoopNode** labelled by
-  kind, connected by an edge to the parent, plus a small header badge.
-- **Branch conversation** — node action (`IconBranch`, Claude-only): sends `/branch` into the
+  and streams chunks over `agent:subagent-activity` into the store.
+- **/loop, /schedule & /cron node** (agents in `RECURRING_CAPABLE`) — detected from the **tools**
+  the agent invokes (robust; users often phrase it in natural language so the prompt rarely starts
+  with the slash): `PreToolUse` for `Skill` (skill ∈ loop/schedule/cron), `CronCreate` (→ cron,
+  label = cron expr · prompt), or `ScheduleWakeup` (→ loop) — plus a `UserPromptSubmit`
+  `/loop|/schedule|/cron` prompt-prefix fallback, all surfaced as `recurring` normalized events.
+  Sets `agentStatus.loop` ({count, prompt, items, kind}); for in-session `loop` each turn-done
+  bumps the count + appends `lastMessage` (schedule/cron run in the background, so they aren't
+  counted). Cleared on session-end. Renders an ephemeral **LoopNode** labelled by kind, connected
+  by an edge to the parent, plus a small header badge.
+- **Branch conversation** — node action (`IconBranch`, Claude-only via `BRANCH_CAPABLE`): sends `/branch` into the
   existing terminal via `pty.sendText` (tmux `send-keys`) and opens a new Claude node that
   resumes the parked original with `claude --settings … -r <ORIGINAL_ID>`. The original id is
   the session id already known from hooks; `lib/claudeBranch.ts` is the fallback that parses
