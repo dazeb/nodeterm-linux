@@ -183,9 +183,9 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   (claude/codex/gemini: id, label, spawn command, color, …) keyed by an **open** `AgentId`
   type (so custom ids fit). Capabilities are membership lists, not flags:
   `AGENT_HOOK_TARGETS`, `RESUMABLE_AGENTS`, `SUBAGENT_CAPABLE`, `RECURRING_CAPABLE`,
-  `BRANCH_CAPABLE`, `BRIDGE_CAPABLE`, `USAGE_CAPABLE`, with helpers (`hasHooks`, `canBranch`,
-  …). Branch, Session Bridge and the usage indicator stay **Claude-only** purely by being in
-  only `BRANCH_CAPABLE` / `BRIDGE_CAPABLE` / `USAGE_CAPABLE`. UI gates on these helpers — no
+  `BRANCH_CAPABLE`, `CONTEXT_LINK_CAPABLE`, `USAGE_CAPABLE`, with helpers (`hasHooks`, `canBranch`,
+  `canContextLink`, …). Branch, Context Link and the usage indicator stay **Claude-only** purely by being in
+  only `BRANCH_CAPABLE` / `CONTEXT_LINK_CAPABLE` / `USAGE_CAPABLE`. UI gates on these helpers — no
   hardcoded `=== 'claude'`. **Custom agents** (user-defined in Settings, `customAgents`) are in
   no capability list: spawn + terminal-title + process status only.
 - **State via each agent's hooks → shared 4-state model** — detection uses the agent's own
@@ -251,6 +251,13 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   resumes the parked original with `claude --settings … -r <ORIGINAL_ID>`. The original id is
   the session id already known from hooks; `lib/claudeBranch.ts` is the fallback that parses
   `pty.capture` output when the id isn't known. The source node stays on the new branch.
+- **Context Link** — a node action gated by `CONTEXT_LINK_CAPABLE` (Claude-only): drawing an
+  edge between two Claude nodes lets each READ the other's context on demand (pull, not push).
+  `src/main/context-link.ts` (+ pure `context-link-core.ts`) writes a per-node link file under
+  `<userData>/context-links/` and installs a `get-linked-context` skill + a self-contained CLI
+  (run via Electron-as-Node) that prints the linked node's transcript / summary / terminal
+  output. Transcript paths are learned from the hook raw-listener; on connect, an idle-gated
+  one-line note is injected into each endpoint. (Replaced the earlier MCP-based bridge.)
 
 ## Canvas interaction & panels (`Canvas.tsx` is the hub)
 
