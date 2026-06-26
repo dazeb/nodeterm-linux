@@ -318,18 +318,28 @@ feed) is documented in **`docs/RELEASING.md`**; CI is `.github/workflows/release
 canonical GitHub Release copy).
 
 Auto-update uses **electron-updater** (`src/main/updater.ts`, `initUpdater(win)` from `index.ts`):
-runs **only when `app.isPackaged`** (dev = no-op), checks on launch + every 6h, forwards
-`update-available` / `update-downloaded` to the renderer over IPC. `components/UpdateBanner.tsx`
-shows a strip + **Restart to update** → `updates.restart()` → `autoUpdater.quitAndInstall()`.
-Exposed via `window.nodeTerminal.updates` (`UpdateApi`). macOS *silent* self-install requires the
-signed+notarized build; unsigned builds still surface the banner for a manual download.
+runs **only when `app.isPackaged`** (dev = no-op), checks on launch + every 6h, auto-downloads,
+forwards the lifecycle (`update-available` / `download-progress` / `update-downloaded` / errors)
+to the renderer over IPC. `components/UpdateCard.tsx` shows the strip + **Restart to update** →
+`updates.restart()` → `autoUpdater.quitAndInstall()`; on `update-downloaded` an OS notification
+also fires when the window is unfocused. Exposed via `window.nodeTerminal.updates` (`UpdateApi`).
+macOS *silent* self-install requires the signed+notarized build; unsigned builds still surface
+the card for a manual download. **Deployment status:** `api.nodeterm.dev` is live, but the
+`https://nodeterm.dev/updates` feed isn't hosted yet (apex domain unresolved) and no `v*` tag has
+shipped — so auto-update is inert in the wild until the feed goes up (see `docs/RELEASING.md`).
 
-**In-app announcements** (news, separate from updates): `src/main/announcements.ts` fetches
-`https://nodeterm.dev/announcements.json` from the **main process** (so the renderer CSP stays
-`'self'`), exposed as `window.nodeTerminal.announcements.fetch()`. `components/AnnouncementBanner.tsx`
-(stacked with the update banner under the tab bar in a `.top-banners` column) shows the newest
-item the user hasn't dismissed; dismissed `id`s persist in `localStorage`. Feed schema +
-example: `docs/RELEASING.md` / `docs/announcements.example.json`.
+**Backend check feed** (`src/main/check.ts`, successor to the static `announcements.json`): the
+**main process** calls `GET https://api.nodeterm.dev/v1/check?version=&os=&channel=stable` (so the
+renderer CSP stays `'self'`) on launch + every 6h, cached 5 min, returning `{ messages, update }`.
+Exposed split over two IPC handlers: `announcements.fetch()` → `messages`, `appUpdatePolicy` →
+`update`. `components/AnnouncementBanner.tsx` (stacked above `UpdateCard` under the tab bar in a
+`.top-banners` column) shows the newest message the user hasn't dismissed (dismissed `id`s persist
+in `localStorage`); `update.mandatory`/`minSupported` flips `UpdateCard` into a blocking required-
+update state. The call no-ops under `DO_NOT_TRACK`/`NODETERM_TELEMETRY_DISABLED` or in unpackaged
+builds (unless `NODETERM_API_BASE` targets a local server). Schema + example: `docs/RELEASING.md` /
+`docs/announcements.example.json`. **Telemetry** (`src/main/telemetry.ts`) is a separate opt-out
+ping to `api.nodeterm.dev/v1/telemetry` (version/OS on launch + daily), gated on
+`settings.telemetryEnabled` + the same build/DNT guards; toggle in Settings → Privacy.
 
 ## Conventions
 
