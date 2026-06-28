@@ -118,6 +118,26 @@ If tmux is unavailable, `PtyManager` falls back to a plain shell (no cross-resta
 continuity). `findTmux()` resolves an absolute path because GUI apps don't inherit the
 shell PATH; `TMUX`/`TMUX_PANE` are stripped from the child env to avoid nesting refusal.
 
+### Cold restore (machine reboot)
+
+tmux only survives an **app** restart — a **machine reboot kills the tmux server**, so every
+`nt-<nodeId>` session is gone. To bridge that, `create()` returns `PtyCreateResult` with a
+`fresh` flag: it runs `tmux has-session` *before* spawning, so `fresh=false` means a warm
+reattach (tmux redraws) and `fresh=true` means a cold start (first open OR post-reboot). On a
+cold start the renderer (`TerminalNode.tsx`) reconstructs state instead of relying on the dead
+session — this mirrors REF's approach (you can't keep a live OS process across a reboot):
+- **Scrollback replay** — `main/scrollback-store.ts` keeps a byte-capped (`256 KB`) snapshot of
+  each tmux session's recent output under `<userData>/terminal-scrollback/`, refreshed on a
+  timer (`SCROLLBACK_SNAPSHOT_MS`) + on detach/quit (`tmux capture-pane -e`). On a cold start the
+  renderer reads it via `pty.readScrollback` and writes it back into xterm (with a "session
+  restored" separator). Warm reattach skips it (tmux already redraws). Deleted with the node in
+  `destroySession`.
+- **Agent resume** — on a cold start of a node whose `agentId` is in `RESUMABLE_AGENTS`, the
+  renderer re-launches the agent CLI: `resumeCommand(agentId, sessionId)` (from the session id
+  persisted in `agentStatus` localStorage — `claude --resume`, `codex resume`, `gemini
+  --resume`) when known, else the bare `launchCmd`. The one-shot `data.initialCommand` still wins
+  on the very first open, so the agent is never double-launched.
+
 ## Terminal node lifecycle (gotchas)
 
 `src/renderer/nodes/TerminalNode.tsx` is the trickiest file:
