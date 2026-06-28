@@ -125,7 +125,7 @@ tmux only survives an **app** restart — a **machine reboot kills the tmux serv
 `fresh` flag: it runs `tmux has-session` *before* spawning, so `fresh=false` means a warm
 reattach (tmux redraws) and `fresh=true` means a cold start (first open OR post-reboot). On a
 cold start the renderer (`TerminalNode.tsx`) reconstructs state instead of relying on the dead
-session — this mirrors REF's approach (you can't keep a live OS process across a reboot):
+session (you can't keep a live OS process across a reboot):
 - **Scrollback replay** — `main/scrollback-store.ts` keeps a byte-capped (`256 KB`) snapshot of
   each tmux session's recent output under `<userData>/terminal-scrollback/`, refreshed on a
   timer (`SCROLLBACK_SNAPSHOT_MS`) + on detach/quit (`tmux capture-pane -e`). On a cold start the
