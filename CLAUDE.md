@@ -91,9 +91,14 @@ project's nodes only.** The contract:
 - Switching away unmounts the old project's `TerminalNode`s → their tmux clients detach but
   the sessions keep running; switching back reattaches. tmux session names are per-node-id
   (globally unique), so projects never collide.
-- Deleting a project calls `transport.destroy(nodeId)` for each of its terminals (ending
-  their tmux sessions). Deleting the **last** project is allowed → projects empty →
-  `WelcomeScreen` (New project / Open folder / Clone repo).
+- The tab caret menu's **Close project** (`closeProject`) is **non-destructive**: it sets
+  `project.closed = true` (hidden from the tab bar, kept on disk with all nodes) and leaves the
+  tmux sessions running, so closing just detaches like a project switch. Closed projects are
+  reopenable from the **"Recently closed"** list on `WelcomeScreen` (`reopenProject` → restores
+  nodes, which reattach warm or cold-restore). `hasProjects` counts only **open** projects, so
+  closing the last open one shows the welcome screen. **Permanent** deletion (`deleteProject`:
+  `transport.destroy(nodeId)` per terminal + drop agent status + SSH teardown) now only happens
+  via the `×` on a "Recently closed" entry.
 - A project's `cwd` (folder picker, `dialog:select-folder`) is passed to terminal/Claude
   node factories so new terminals open there. **Folder ↔ project is deduped:** "Open folder…"
   reuses the existing project with that `cwd` (and its nodes) instead of creating a duplicate.
