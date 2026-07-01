@@ -249,12 +249,13 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   - **session → title (read):** the authoritative name lives in the transcript `.jsonl`, not the
     OSC terminal title (`/rename` does **not** update OSC — a known Claude gap — so reading the
     file is the only thing that works after a **resume**). `main/transcript-reader.ts`
-    `readSessionName(sessionId, cwd)` resolves the session file (by sessionId, else newest under
-    the cwd slug) and `pickSessionName` returns the latest `custom-title`'s `customTitle` (the
-    `/rename` name) else the latest `ai-title`'s `aiTitle` (auto name). Exposed over
-    `pty.readSessionName`. `TerminalNode` polls it (~4 s) **only while the title still auto-tracks**
-    (`data.titleAuto`, default true on agent nodes) and adopts it as the `title`. `term.onTitleChange`
-    now feeds the `session` chip only.
+    `readSessionName(sessionId)` resolves the session file **strictly by sessionId** (no cwd
+    fallback — that would make every Claude node in one folder resolve to the same newest transcript
+    and adopt each other's names) and `pickSessionName` returns the latest `custom-title`'s
+    `customTitle` (the `/rename` name) else the latest `ai-title`'s `aiTitle` (auto name). Exposed
+    over `pty.readSessionName`. `TerminalNode` polls it (~4 s) **only once this node's own sessionId
+    is known** and **while the title still auto-tracks** (`data.titleAuto`, default true on agent
+    nodes), and adopts it as the `title`. `term.onTitleChange` now feeds the `session` chip only.
   - **title → session (write):** the moment the user renames the node by hand (header rename box /
     ✦ AI-name / sidebar / command palette → all funnel through `applyManualTitle` or
     `renameSession`), `titleAuto` flips to **false** (polling stops overwriting) and the chosen name
