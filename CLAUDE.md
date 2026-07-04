@@ -174,7 +174,8 @@ session (you can't keep a live OS process across a reboot):
   completion notification + session-name chip (hook-capable agents), content search, and the
   Claude-only **Branch conversation** action. Custom user-defined agents spawn + show
   process/terminal-title status only.
-- **sticky** (`StickyNode.tsx`) — colored note, free text, collapsible.
+- **sticky** (`StickyNode.tsx`) — colored note, free text, collapsible. Has link handles:
+  connect a sticky to any terminal node to attach the note as context (see Context Link).
 - **group** (`GroupNode.tsx`) — real React Flow parent/child frame; `groupSelectedNodes`
   reparents children (`parentId` + `extent:'parent'`, relative positions), `ungroupNodes`
   restores absolute. `nodeStatesToFlow` sorts parents first (React Flow requirement).
@@ -305,6 +306,13 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   (run via Electron-as-Node) that prints the linked node's transcript / summary / terminal
   output. Transcript paths are learned from the hook raw-listener; on connect, an idle-gated
   one-line note is injected into each endpoint. (Replaced the earlier MCP-based bridge.)
+  **Note links:** a sticky note can be connected to ANY terminal node (one-way, sticky →
+  terminal). On connect, agent sessions get a one-shot idle-gated push of the note text
+  (`buildNotePushMessage`, single-line, truncated at 2000 chars); plain terminals get no
+  push (sendText appends Enter — the text would execute). The note's live text also rides
+  the link file (`ContextLinkInfo.note`), so Claude reads the current text via the
+  get-linked-context CLI (`summary`/`transcript` print it; `list` marks `(note)`). Pure
+  edge/push/map logic in `renderer/lib/noteLink.ts`.
 
 ## Canvas interaction & panels (`Canvas.tsx` is the hub)
 
