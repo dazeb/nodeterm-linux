@@ -268,7 +268,12 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   on palette open, cached ~3s); content matches show "found in output".
 - **Subagent visualization** (agents in `SUBAGENT_CAPABLE`) — `subagent-start`/`subagent-end`
   normalized events (from Claude's `PreToolUse`/`PostToolUse` on tool `Agent`/`Task`, correlated
-  by `tool_use_id`) drive a transient `state/agentNodes.ts` store. Canvas renders each subagent
+  by `tool_use_id`) drive a transient `state/agentNodes.ts` store. Claude launches subagents
+  **async by default**: that PostToolUse is only a launch ack (`status:'async_launched'`), NOT the
+  end — normalize keeps the card working, the transcript tail keeps streaming, and the real end is
+  the `<task-notification>` queued into the parent transcript (sniffed by the context tails →
+  synthetic `subagent-end` in `index.ts`; the notification's `UserPromptSubmit` is also not a
+  `newTurn`, so it doesn't clear the fan-out). Canvas renders each subagent
   as an **ephemeral** `SubagentNode` (display-only card: type + task + working/done) connected by
   an **edge** to its parent agent node. These ephemeral nodes/edges live outside the React Flow
   `nodes` state (merged only at the `<ReactFlow>` prop), so they're never persisted
