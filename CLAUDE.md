@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**Node-based terminal manager** (source-available, proprietary — see `LICENSE`): multiple real terminals live on a single
+**Node-based terminal manager** (FSL-1.1-MIT, converts to MIT after 2 years — see `LICENSE`): multiple real terminals live on a single
 pan/zoom canvas as draggable nodes. Target users are people with ADHD / disorganized
 workflows who benefit from a spatial layout over stacked tabs. Long-term vision includes
 remote access and paid features — the architecture is built so those slot in without a
