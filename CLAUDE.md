@@ -57,12 +57,12 @@ separate store mirroring node state — earlier dual-source designs caused sync 
 `src/renderer/state/workspace.ts` holds only pure helpers: the color palette, the node
 factories (`createTerminalNode`, `createAgentNode(agentId, …)` — with `createClaudeNode` kept
 as a thin `createAgentNode('claude', …)` wrapper, `createStickyNode`, `createGroupNode`,
-`createEditorNode`, `createDiffNode`), the group transforms (`groupSelectedNodes`,
+`createEditorNode`, `createDiffNode`, `createChatNode`), the group transforms (`groupSelectedNodes`,
 `ungroupNodes`, `duplicateNode`), and the `nodeStatesToFlow` / `flowToNodeStates`
-serializers. Node kinds: `terminal | sticky | group | editor | diff`. A node's `data`
+serializers. Node kinds: `terminal | sticky | group | editor | diff | chat`. A node's `data`
 carries `title, color, group, tags, collapsed, expandedHeight, shell, cwd, text,
-initialCommand, filePath, diffStaged`, and `agentId` (which agent CLI a terminal node runs —
-persisted). `nodeStatesToFlow` defaults a missing `kind` to `terminal` for backward compat and
+initialCommand, filePath, diffStaged`, `agentId` (which agent CLI a terminal node runs —
+persisted), and `chatSessionId` (resume id for a chat node — persisted). `nodeStatesToFlow` defaults a missing `kind` to `terminal` for backward compat and
 migrates the legacy `tags:['claude']` marker to `data.agentId = 'claude'`.
 
 Persistence has two layers:
@@ -191,6 +191,20 @@ session (you can't keep a live OS process across a reboot):
   `img-src data:`), on a checkerboard backdrop with the pixel dimensions in the header.
 - **diff** (`DiffNode.tsx`) — Monaco diff editor; `diffStaged` chooses HEAD↔index (staged)
   vs index↔working (unstaged) via `git:show-file` + `fs:read`. Read-only.
+- **chat** (`ChatNode.tsx`) — SDK-driven Claude chat (not a PTY). A main-process driver
+  (`main/chat-driver.ts`) holds one long-lived `@anthropic-ai/claude-agent-sdk` `query()` per node
+  (streaming input, `includePartialMessages`); `main/chat-events.ts` reduces SDK messages to
+  `ChatEvent`s pushed over `chat:event:<nodeId>`, consumed by the renderer store
+  `state/chatSessions.ts` (+ pure `chatSessionsCore.ts`). Token streaming, in-chat permission cards
+  (`canUseTool` bridge — Allow / Always-this-session / Deny), send-while-working FIFO queue
+  (driver-side `chat-queue.ts`) + Stop (`interrupt()`), thinking blocks, slash popup (from `init`
+  `slash_commands`), image paste/drop (base64 blocks), Edit/Write diff cards (click → diff node), and
+  a cost chip (`total_cost_usd` accumulation). Continuity is **resume-based** via persisted
+  `data.chatSessionId` (the process dies with the app; history reloads from the transcript via
+  `chat.readTranscript`); the driver survives project switches and is disposed only on permanent
+  delete paths. Forkable from a Claude terminal node via its header 💬 action (experimental). Agent
+  status (RUNNING / NEEDS YOU) is fed from the driver's hooks as `NormalizedAgentEvent`. Claude-only
+  via `CHAT_CAPABLE` / `canChat`.
 
 Monaco is wired in `renderer/editor/monaco-setup.ts` (language workers bundled via Vite
 `?worker` — no CDN; CSP `worker-src` allows them). Markdown rendering is shared in
@@ -209,10 +223,11 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   (claude/codex/gemini: id, label, spawn command, color, …) keyed by an **open** `AgentId`
   type (so custom ids fit). Capabilities are membership lists, not flags:
   `AGENT_HOOK_TARGETS`, `RESUMABLE_AGENTS`, `SUBAGENT_CAPABLE`, `RECURRING_CAPABLE`,
-  `BRANCH_CAPABLE`, `CONTEXT_LINK_CAPABLE`, `USAGE_CAPABLE`, with helpers (`hasHooks`, `canBranch`,
-  `canContextLink`, …). Branch, Context Link and the usage indicator stay **Claude-only** purely by being in
-  only `BRANCH_CAPABLE` / `CONTEXT_LINK_CAPABLE` / `USAGE_CAPABLE`. UI gates on these helpers — no
-  hardcoded `=== 'claude'`. **Custom agents** (user-defined in Settings, `customAgents`) are in
+  `BRANCH_CAPABLE`, `CONTEXT_LINK_CAPABLE`, `USAGE_CAPABLE`, `CHAT_CAPABLE`, with helpers (`hasHooks`,
+  `canBranch`, `canContextLink`, `canChat`, …). Branch, Context Link, the usage indicator and the
+  SDK **chat node** stay **Claude-only** purely by being in only `BRANCH_CAPABLE` /
+  `CONTEXT_LINK_CAPABLE` / `USAGE_CAPABLE` / `CHAT_CAPABLE` (see the `chat` node kind above). UI gates
+  on these helpers — no hardcoded `=== 'claude'`. **Custom agents** (user-defined in Settings, `customAgents`) are in
   no capability list: spawn + terminal-title + process status only.
 - **State via each agent's hooks → shared 4-state model** — detection uses the agent's own
   hooks, **not** output parsing. `src/shared/agents/normalize.ts` has per-agent normalizers
