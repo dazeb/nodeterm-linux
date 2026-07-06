@@ -115,11 +115,16 @@ interferes; status bar off, mouse on, 50k history). Because the tmux *server* ou
 app, sessions survive when no client is attached.
 
 Lifecycle, by intent:
-- **Node unmount / window close / app quit** → `kill()` only detaches the PTY client; the
-  tmux session keeps running. `PtyManager.killAll()` deliberately does NOT kill sessions.
-- **Node reopen / app relaunch** → a new PTY attaches to the same `nt-<nodeId>` session and
-  tmux redraws current state.
-- **User clicks ×** → `destroy(persistKey)` runs `tmux kill-session`, permanently ending it.
+- **Node unmount (project switch)** → `kill()` **parks** a local tmux-backed session: the client
+  process stays attached for `PARK_KEEP_MS` (5 min) with output dropped, so a remount within the
+  window reuses it — `create()` rebinds + `tmux refresh-client` repaints instantly (no spawn, no
+  attach wait). The timer then truly detaches. Remote (ssh) / relay-host sessions detach at once.
+- **Window close / app quit** → clients detach (`PtyManager.killAll()`); the tmux session keeps
+  running. `killAll()` deliberately does NOT kill sessions.
+- **Node reopen / app relaunch** (no parked client) → a new PTY attaches to the same
+  `nt-<nodeId>` session and tmux redraws current state.
+- **User clicks ×** → `destroy(persistKey)` runs `tmux kill-session`, permanently ending it
+  (a parked client exits with its session).
 
 The node id is the `persistKey` (passed to `transport.create`), so it must stay stable.
 If tmux is unavailable, `PtyManager` falls back to a plain shell (no cross-restart
