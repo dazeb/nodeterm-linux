@@ -115,16 +115,20 @@ interferes; status bar off, mouse on, 50k history). Because the tmux *server* ou
 app, sessions survive when no client is attached.
 
 Lifecycle, by intent:
-- **Node unmount (project switch)** → `kill()` **parks** a local tmux-backed session: the client
-  process stays attached for `PARK_KEEP_MS` (5 min) with output dropped, so a remount within the
-  window reuses it — `create()` rebinds + `tmux refresh-client` repaints instantly (no spawn, no
-  attach wait). The timer then truly detaches. Remote (ssh) / relay-host sessions detach at once.
+- **Node unmount (project switch)** → the RENDERER **parks** the terminal (`TerminalNode.tsx`
+  `parkedTerminals`): the xterm instance + its attached PTY stay alive with the `.xterm` element
+  detached from the DOM, so a remount within `TERM_PARK_MS` (5 min) re-adopts them — instant, and
+  exact (the tmux client never detaches, so mouse-tracking/alternate-screen modes and scrollback
+  carry over; do NOT "optimize" this into a respawn+redraw — a fresh xterm on a reused client
+  misses the attach-time mode sequences and breaks scrolling). The park timer then runs the real
+  teardown: `kill()` detaches the PTY client; the tmux session keeps running. WebGL contexts are
+  released on park / reacquired on adopt (browsers cap ~16 live contexts). Permanent-delete paths
+  call `disposeTerminalOnUnmount(id)` so a deleted node disposes instead of parking.
 - **Window close / app quit** → clients detach (`PtyManager.killAll()`); the tmux session keeps
   running. `killAll()` deliberately does NOT kill sessions.
-- **Node reopen / app relaunch** (no parked client) → a new PTY attaches to the same
+- **Node reopen / app relaunch** (nothing parked) → a new PTY attaches to the same
   `nt-<nodeId>` session and tmux redraws current state.
-- **User clicks ×** → `destroy(persistKey)` runs `tmux kill-session`, permanently ending it
-  (a parked client exits with its session).
+- **User clicks ×** → `destroy(persistKey)` runs `tmux kill-session`, permanently ending it.
 
 The node id is the `persistKey` (passed to `transport.create`), so it must stay stable.
 If tmux is unavailable, `PtyManager` falls back to a plain shell (no cross-restart
