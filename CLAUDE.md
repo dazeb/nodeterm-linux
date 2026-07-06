@@ -21,7 +21,8 @@ npm run typecheck  # tsc for both node (main/preload) and web (renderer) project
 npm run rebuild    # re-run electron-rebuild for node-pty if you hit ABI/native errors
 ```
 
-No test runner is set up yet. `npm run typecheck` is the fastest correctness gate.
+`npm test` runs the vitest suite (unit + integration; the remote e2e suites skip when the
+companion server repo isn't checked out). `npm run typecheck` is the fastest correctness gate.
 
 ## Process model (Electron, three contexts)
 
@@ -355,7 +356,7 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   `main/commit-message.ts`: a BYO local agent CLI (claude/codex/custom) spawned read-only on
   the staged diff / captured terminal output (no built-in model); agent + extra prompt in
   Settings.
-- **Settings** (`SettingsPanel.tsx`, ⚙ / ⌘,): font/cursor (live to xterm + Monaco), default
+- **Settings** (`SettingsPage.tsx`, ⚙ / ⌘,): font/cursor (live to xterm + Monaco), default
   shell, grid + snap, pan-hover delay, double-click focus, accent, tmux on/scrollback,
   commit agent, `seenShortcuts`.
 - **Shortcuts** (`ShortcutsPanel.tsx`, ? / ⌘/): shown once on first launch (`seenShortcuts`).
