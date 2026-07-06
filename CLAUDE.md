@@ -62,7 +62,9 @@ as a thin `createAgentNode('claude', …)` wrapper, `createStickyNode`, `createG
 serializers. Node kinds: `terminal | sticky | group | editor | diff | chat`. A node's `data`
 carries `title, color, group, tags, collapsed, expandedHeight, shell, cwd, text,
 initialCommand, filePath, diffStaged`, `agentId` (which agent CLI a terminal node runs —
-persisted), and `chatSessionId` (resume id for a chat node — persisted). `nodeStatesToFlow` defaults a missing `kind` to `terminal` for backward compat and
+persisted), `chatSessionId` (resume id for a chat node — persisted), and `accountId` (which
+managed Claude account a terminal/chat node runs under — immutable, resolved at creation, persisted;
+see **Managed Claude accounts**). `nodeStatesToFlow` defaults a missing `kind` to `terminal` for backward compat and
 migrates the legacy `tags:['claude']` marker to `data.agentId = 'claude'`.
 
 Persistence has two layers:
@@ -328,6 +330,52 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   the link file (`ContextLinkInfo.note`), so Claude reads the current text via the
   get-linked-context CLI (`summary`/`transcript` print it; `list` marks `(note)`). Pure
   edge/push/map logic in `renderer/lib/noteLink.ts`.
+- **Managed Claude accounts** (Claude-only) — run several logged-in Claude identities side by
+  side by giving each its own config dir. `settings.claudeAccounts` is a list of `ClaudeAccount
+  {id, label, email?, host?, pending?, createdAt}` (in `settings.json`; the account **list** is
+  config, not credentials). Isolation is **config-dir**, not token storage: a local account's dir
+  is `{userData}/claude-accounts/<id>` (`claudeConfigDirFor` / pure `localAccountConfigDir`),
+  a **remote** account's is `~/.nodeterm/claude-accounts/<id>` on its `host` (keyed by
+  `sshHostKey` = `user@host`; `remoteAccountConfigDir` is `~`-relative for ssh expansion,
+  `remoteAccountConfigDirAbs` resolves it against the connection's `remoteHome`). The **claude
+  CLI owns login, credential storage, and token refresh** inside that dir — the app NEVER writes
+  credentials. On macOS this works because Claude Code **≥ 2.1** scopes its Keychain service per
+  config dir (`Claude Code-credentials-<sha256(configDir)[:8]>`, `claudeKeychainService`); on
+  < 2.1 one unscoped service is shared → accounts collide, so add-account **warns** (`claude
+  --version`, `isSupportedClaudeVersion`).
+  - **`data.accountId` (terminal + chat nodes)** — resolved **once at node creation**
+    (`resolveNewNodeAccount`: explicit submenu pick → `project.defaultAccountId` → system default
+    `~/.claude`), then **immutable** and **persisted** (serializers). `undefined` = system default
+    = **bit-for-bit legacy behavior** (no env touched). Inherited by **Branch** and the
+    **terminal→chat fork**. A pending (not-yet-logged-in) account resolves to `undefined` until it
+    completes.
+  - **Env injection** — `pty-manager` sets `CLAUDE_CONFIG_DIR` in the spawn env AND as a tmux `-e`
+    (local); for a remote node it emits an **absolute-path** remote tmux `-e` built from the
+    connection-cached `remoteHome` (skipped **fail-open** if home is unresolved). `AUTH_ENV_STRIP`
+    (`ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_OAUTH_TOKEN`) is deleted from the
+    child env so a stray env key can't shadow the account. A **missing** account dir → warn +
+    silent system fallback. The **chat driver** passes `options.env` (same `CLAUDE_CONFIG_DIR` +
+    strip) to the SDK `query()` **only when an account is set** (else legacy env untouched).
+  - **Login flow** — Settings → Accounts → **Add** creates a `pending` account and drops a canvas
+    **login node** that runs `claude /login` under the account dir. Main polls the dir's
+    `.claude.json` (`LOGIN_POLL_MS` 2 s, up to `LOGIN_TIMEOUT_MS` 5 min) for `oauthAccount.email`;
+    on capture the account flips out of `pending` with its email as the default label. Account
+    removal cancels any pending wait + `markDirty`.
+  - **Hook install** — the managed hook is merged into **each account dir's** `settings.json` at
+    add-account **and** at app launch (local, shared `install-helper.ts`) / via
+    `RemoteHooks.installIntoAccountDir` (remote), so every identity reports agent status.
+  - **Account-aware readers** — transcript resolution is scoped per account (`transcriptRootFor`
+    picks the account dir's `projects/`, composite cache key includes `accountId`); the same
+    threading runs through the session-name poll, restart handoff, chat transcript read, and
+    `ChatPanel`. The **usage indicator** is per account (`claude-usage.ts`: scoped Keychain
+    service first, legacy unscoped fallback; popover lists a row per account with **System**
+    first; **remote accounts are excluded** — v1 has no remote usage).
+  - **Pickers** — New Claude / New Chat expose an account **submenu** (pane menu; flat entries in
+    the dock; palette commands; TabBar sets the **per-project default**). A **local** project
+    lists local accounts, an **SSH** project lists only accounts whose `host` matches its
+    connection; both offer a **System account** option.
+  - **Remote accounts (v1 scope)** — selection + login + env injection only; **no usage**, no
+    per-account transcript readers beyond env.
 
 ## Canvas interaction & panels (`Canvas.tsx` is the hub)
 
