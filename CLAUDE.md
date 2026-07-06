@@ -310,8 +310,11 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   `/loop|/schedule|/cron` prompt-prefix fallback, all surfaced as `recurring` normalized events.
   Sets `agentStatus.loop` ({count, prompt, items, kind}); for in-session `loop` each turn-done
   bumps the count + appends `lastMessage` (schedule/cron run in the background, so they aren't
-  counted). Cleared on session-end. Renders an ephemeral **LoopNode** labelled by kind, connected
-  by an edge to the parent, plus a small header badge.
+  counted). Lifetime by kind: `loop` dies with its session; `cron`/`schedule` **outlive turns,
+  sessions and app restarts** (`loop` is persisted in the agentStatus localStorage) and are
+  cleared by a `CronDelete` `recurring`-end event or the card's own × (dismisses the card only).
+  `clearForParent` (new turn) leaves the loop card's dragged position alone. Renders an ephemeral
+  **LoopNode** labelled by kind, connected by an edge to the parent, plus a small header badge.
 - **Branch conversation** — node action (`IconBranch`, Claude-only via `BRANCH_CAPABLE`): sends `/branch` into the
   existing terminal via `pty.sendText` (tmux `send-keys`) and opens a new Claude node that
   resumes the parked original with `claude --settings … -r <ORIGINAL_ID>`. The original id is
