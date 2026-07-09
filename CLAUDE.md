@@ -236,9 +236,10 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   type (so custom ids fit). Capabilities are membership lists, not flags:
   `AGENT_HOOK_TARGETS`, `RESUMABLE_AGENTS`, `SUBAGENT_CAPABLE`, `RECURRING_CAPABLE`,
   `BRANCH_CAPABLE`, `CONTEXT_LINK_CAPABLE`, `USAGE_CAPABLE`, `CHAT_CAPABLE`, with helpers (`hasHooks`,
-  `canBranch`, `canContextLink`, `canChat`, …). Branch, Context Link, the usage indicator and the
+  `canBranch`, `canContextLink`, `canChat`, …). Branch, the usage indicator and the
   SDK **chat node** stay **Claude-only** purely by being in only `BRANCH_CAPABLE` /
-  `CONTEXT_LINK_CAPABLE` / `USAGE_CAPABLE` / `CHAT_CAPABLE` (see the `chat` node kind above). UI gates
+  `USAGE_CAPABLE` / `CHAT_CAPABLE`; **Context Link** now spans the three builtins
+  (`CONTEXT_LINK_CAPABLE = claude/codex/gemini`) (see the `chat` node kind above). UI gates
   on these helpers — no hardcoded `=== 'claude'`. **Custom agents** (user-defined in Settings, `customAgents`) are in
   no capability list: spawn + terminal-title + process status only.
 - **State via each agent's hooks → shared 4-state model** — detection uses the agent's own
@@ -329,13 +330,21 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   resumes the parked original with `claude --settings … -r <ORIGINAL_ID>`. The original id is
   the session id already known from hooks; `lib/claudeBranch.ts` is the fallback that parses
   `pty.capture` output when the id isn't known. The source node stays on the new branch.
-- **Context Link** — a node action gated by `CONTEXT_LINK_CAPABLE` (Claude-only): drawing an
-  edge between two Claude nodes lets each READ the other's context on demand (pull, not push).
-  `src/main/context-link.ts` (+ pure `context-link-core.ts`) writes a per-node link file under
-  `<userData>/context-links/` and installs a `get-linked-context` skill + a self-contained CLI
-  (run via Electron-as-Node) that prints the linked node's transcript / summary / terminal
-  output. Transcript paths are learned from the hook raw-listener; on connect, an idle-gated
-  one-line note is injected into each endpoint. (Replaced the earlier MCP-based bridge.)
+- **Context Link** — a node action gated by `CONTEXT_LINK_CAPABLE` (claude/codex/gemini; custom
+  agents + plain terminals excluded): drawing an edge between two builtin-agent nodes lets each
+  READ the other's context on demand (pull, not push). `src/main/context-link.ts` (+ pure
+  `context-link-core.ts`) writes a per-node link file (carrying `agent` + per-entry
+  `agentId`/`sessionId`/`accountId`) under `<userData>/context-links/` and a self-contained CLI
+  (Electron-as-Node) that parses **all three** transcript formats (claude JSONL / codex rollout /
+  gemini event-sourced chat) to print the linked node's transcript / summary / terminal output.
+  Codex/gemini paths resolve via the handoff locators (`locateCodex`/`locateGemini` by sessionId);
+  claude keeps the hook-fed path + `locateClaude(sessionId, accountId)` fallback (cwd-newest is
+  claude-only); Canvas rewrites link files when a linked node's sessionId appears (`linkSessionSig`).
+  Discovery is per-agent: claude installs a `get-linked-context` skill; codex/gemini get an
+  idempotent marker block (`<!-- nodeterm:get-linked-context:start/end -->`) merged into
+  `~/.codex/AGENTS.md` / `~/.gemini/GEMINI.md`. On connect an idle-gated one-line note is injected
+  into each endpoint (claude → skill pointer; codex/gemini → inline CLI command via
+  `contextLink.info()`). (Replaced the earlier MCP-based bridge.)
   **Note links:** a sticky note can be connected to ANY terminal node (one-way, sticky →
   terminal). On connect, agent sessions get a one-shot idle-gated push of the note text
   (`buildNotePushMessage`, single-line, truncated at 2000 chars); plain terminals get no
