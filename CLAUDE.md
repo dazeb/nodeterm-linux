@@ -39,6 +39,16 @@ The codebase is split by Electron process boundary — keep code on the correct 
   forbidden and enforced by `src/core/no-electron.test.ts`. The Electron implementation is
   `src/main/platform-electron.ts`. This is the seam the Server Edition's `src/server/` shell
   will plug into (spec: `docs/superpowers/specs/2026-07-10-server-edition-design.md`).
+- **`src/server/`** — Server Edition shell (Phase 2): plain `node:http` + `ws`
+  serve the built renderer to a browser and speak a WS-RPC protocol
+  (`src/shared/rpc.ts`) that a browser-side `window.nodeTerminal` shim
+  (`src/renderer/bridge/`) consumes. Boots the same core services via
+  `ServerPlatform` (`src/server/platform-server.ts`). Single-user auth
+  (scrypt + httpOnly cookie + Origin check). `npm run server:dev` to try;
+  docs/SERVER.md for details. `src/server` must not import electron or
+  `src/main` (enforced by `src/server/no-electron.test.ts`). Terminal-only
+  scope; the renderer detects the bridge in `src/renderer/main.tsx`
+  (desktop preload path is untouched).
 - **`src/preload/`** — the only bridge. `index.ts` uses `contextBridge` to expose a
   narrow API on `window.nodeTerminal` (typed in `index.d.ts`). `contextIsolation` is on,
   `nodeIntegration` off.
