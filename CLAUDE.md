@@ -28,9 +28,17 @@ companion server repo isn't checked out). `npm run typecheck` is the fastest cor
 
 The codebase is split by Electron process boundary — keep code on the correct side:
 
-- **`src/main/`** — Node/Electron main process. Owns all native + filesystem access:
-  `pty-manager.ts` spawns `node-pty` processes; `workspace-store.ts` reads/writes the
-  workspace JSON in `app.getPath('userData')`. The renderer must never import these.
+- **`src/main/`** — Node/Electron main process. The **shell** around `src/core/`: owns
+  Electron/window/IPC wiring, dialogs, and the `CorePlatform` implementation
+  (`platform-electron.ts`). The renderer must never import these.
+- **`src/core/`** — Electron-free service core (pty, workspace/settings stores, git,
+  chat driver, hook server + hooks cluster, context/subagent tails, transcripts,
+  model-window, license, context-link, and the pure ssh leaves under `src/core/remote-ssh/`
+  — control-master, remote-git). Talks to its shell ONLY via the `CorePlatform` interface
+  (`src/core/platform.ts`); importing `electron` (or `../main/*`) inside `src/core` is
+  forbidden and enforced by `src/core/no-electron.test.ts`. The Electron implementation is
+  `src/main/platform-electron.ts`. This is the seam the Server Edition's `src/server/` shell
+  will plug into (spec: `docs/superpowers/specs/2026-07-10-server-edition-design.md`).
 - **`src/preload/`** — the only bridge. `index.ts` uses `contextBridge` to expose a
   narrow API on `window.nodeTerminal` (typed in `index.d.ts`). `contextIsolation` is on,
   `nodeIntegration` off.
