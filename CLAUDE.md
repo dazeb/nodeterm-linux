@@ -46,9 +46,11 @@ The codebase is split by Electron process boundary — keep code on the correct 
   `ServerPlatform` (`src/server/platform-server.ts`). Single-user auth
   (scrypt + httpOnly cookie + Origin check). `npm run server:dev` to try;
   docs/SERVER.md for details. `src/server` must not import electron or
-  `src/main` (enforced by `src/server/no-electron.test.ts`). Terminal-only
-  scope; the renderer detects the bridge in `src/renderer/main.tsx`
-  (desktop preload path is untouched).
+  `src/main` (enforced by `src/server/no-electron.test.ts`). **Phase 3a** also
+  serves fs/git/commit handlers (editor/diff/source-control now work in the
+  browser) plus a web folder/file picker (in-app server-directory browser,
+  replacing the native dialog) and WS backpressure; the renderer detects the
+  bridge in `src/renderer/main.tsx` (desktop preload path is untouched).
 - **`src/preload/`** — the only bridge. `index.ts` uses `contextBridge` to expose a
   narrow API on `window.nodeTerminal` (typed in `index.d.ts`). `contextIsolation` is on,
   `nodeIntegration` off.
