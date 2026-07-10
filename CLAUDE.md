@@ -38,7 +38,7 @@ The codebase is split by Electron process boundary — keep code on the correct 
   (`src/core/platform.ts`); importing `electron` (or `../main/*`) inside `src/core` is
   forbidden and enforced by `src/core/no-electron.test.ts`. The Electron implementation is
   `src/main/platform-electron.ts`. This is the seam the Server Edition's `src/server/` shell
-  will plug into (spec: `docs/superpowers/specs/2026-07-10-server-edition-design.md`).
+  plugs into.
 - **`src/server/`** — Server Edition shell (Phase 2): plain `node:http` + `ws`
   serve the built renderer to a browser and speak a WS-RPC protocol
   (`src/shared/rpc.ts`) that a browser-side `window.nodeTerminal` shim
