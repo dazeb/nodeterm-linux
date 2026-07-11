@@ -511,3 +511,28 @@ ping to `api.nodeterm.dev/v1/telemetry` (version/OS on launch + daily), gated on
   the subagent-driven-development workflow), use the latest model, **Opus 4.8**
   (`claude-opus-4-8`). This overrides any cheaper-model defaults in a skill's model-selection
   guidance.
+- **Three surfaces — design every feature for all of them.** nodeterm now ships on three
+  fronts, and a feature is not "done" until you've decided how it behaves on each (even if
+  the decision is "not applicable here"):
+  1. **Desktop** (Electron) — the primary app (`src/main` + `src/renderer` via the preload).
+  2. **Server Edition** (Linux, browser) — `src/server` + the `src/renderer/bridge` shim (see
+     the `src/server/` bullet above and docs/SERVER.md).
+  3. **Mobile companion** — *nodeterm mobile*, a **separate repo** at `~/projects/nodeterm-ios`
+     (SwiftUI + SwiftTerm/Citadel, tmux-integrated, talks the `TerminalTransport`/RemoteTransport
+     protocol).
+
+  Practical rules that keep the surfaces in sync:
+  - **Put new service/main-process logic in `src/core` behind `CorePlatform`, never inline in
+    `src/main`.** That is the seam the Server Edition boots from — logic left in `src/main`
+    silently doesn't exist on the server (the `no-electron` tests enforce the boundary, but
+    they can't tell you a feature is *missing* server-side).
+  - **A feature that touches `window.nodeTerminal` needs a real `src/renderer/bridge`
+    implementation, not just a stub** — or a deliberate, documented graceful degrade
+    (`E_UNSUPPORTED` + the affordance hidden, like the Electron-only `shell.reveal`). The
+    bridge's `satisfies NodeTerminalApi` gate forces you to *declare* every member, but a
+    `noopUnsub`/`unsupported` stub compiles fine while doing nothing — decide per member.
+  - **Consider whether the mobile companion should surface the feature** over its
+    transport/protocol. It's a different repo and stack (Swift), so this is usually a
+    follow-up note rather than same-PR work — but flag it so it isn't forgotten.
+  When a change is genuinely desktop-only (native menus, auto-update, Keychain), say so; the
+  point is to make the call consciously, not to leave the other surfaces to rot.
