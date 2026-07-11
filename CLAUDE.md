@@ -90,11 +90,19 @@ migrates the legacy `tags:['claude']` marker to `data.agentId = 'claude'`.
 
 Persistence has two layers:
 
-- **Layout + config** (`workspace.json`, schema v2): a list of **projects**, each with its
-  own `nodes`, `viewport`, `color`, and default `cwd`, plus the `activeProjectId`. Auto-saved
-  on a debounce (and via the dock Save button). Lives in `app.getPath('userData')`.
-  `main/workspace-store.ts` migrates v1 single-canvas files into one project; an **empty**
-  project list is valid and persisted (→ welcome screen). The renderer re-saves on launch.
+- **Layout + config**: schema v3. `workspace.json` (in `app.getPath('userData')`) is now an
+  **index**: local folder projects are refs to `<cwd>/.nodeterm/project.json` (the source of
+  truth — git-shareable, machine-portable; pretty-printed, portable `./` node cwds, monotonic
+  `rev`), SSH projects are refs to the same file on the server (offline `cache` in the index,
+  reconciled by rev on connect, mirrored via `SshFs` with a 5 s write throttle), cwd-less
+  canvases stay inline. The renderer contract is untouched: `workspace.load()/save()` still
+  speak an assembled v2-shaped `Workspace`; all fan-out lives in `core/workspace-store.ts` +
+  pure `core/workspace-files.ts`. v2 files migrate on first save (backup `workspace.v2.bak`,
+  one-time renderer note). Outside edits (git pull/sync) are detected by
+  `core/workspace-watcher.ts` → silent reload, or a Reload/Keep-mine conflict bar when dirty.
+  Unreadable refs render as greyed **unavailable** tabs (never dropped); corrupt project files
+  are set aside as `project.json.corrupt-<ts>`. "Open folder…" adopts an existing
+  `.nodeterm/project.json` (fresh project id on collision; node ids — tmux names — kept).
 - **Live terminal sessions** (tmux): terminals continue where they left off across node
   remounts *and* full app restarts, including running processes. See below.
 
