@@ -51,6 +51,12 @@ The codebase is split by Electron process boundary — keep code on the correct 
   browser) plus a web folder/file picker (in-app server-directory browser,
   replacing the native dialog) and WS backpressure; the renderer detects the
   bridge in `src/renderer/main.tsx` (desktop preload path is untouched).
+  **Phase 3b** boots the loopback **hook server** (`hookServer.start()`) + installs
+  the managed hook scripts, and `wireAgentStatus` (`src/server/agent-status.ts`)
+  broadcasts `agent:status` / `agent:subagent-activity` / `context:update` over the
+  bridge, so agent-status badges, subagent cards, and the context meter now work in the
+  browser (transcript-path jailed against forged POSTs). Still deferred: the SDK **chat
+  node**; **canvas-control** (`agent:control`) is not wired.
 - **`src/preload/`** — the only bridge. `index.ts` uses `contextBridge` to expose a
   narrow API on `window.nodeTerminal` (typed in `index.d.ts`). `contextIsolation` is on,
   `nodeIntegration` off.
