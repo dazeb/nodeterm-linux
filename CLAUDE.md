@@ -82,8 +82,7 @@ adding terminal-session features, extend the interface — do not reach around i
 **React Flow is the single live source of truth** for nodes. There is intentionally no
 separate store mirroring node state — earlier dual-source designs caused sync bugs.
 `src/renderer/state/workspace.ts` holds only pure helpers: the color palette, the node
-factories (`createTerminalNode`, `createAgentNode(agentId, …)` — with `createClaudeNode` kept
-as a thin `createAgentNode('claude', …)` wrapper, `createStickyNode`, `createGroupNode`,
+factories (`createTerminalNode`, `createAgentNode(agentId, …)`, `createStickyNode`, `createGroupNode`,
 `createEditorNode`, `createDiffNode`, `createChatNode`), the group transforms (`groupSelectedNodes`,
 `ungroupNodes`, `duplicateNode`), and the `nodeStatesToFlow` / `flowToNodeStates`
 serializers. Node kinds: `terminal | sticky | group | editor | diff | chat`. A node's `data`
@@ -145,8 +144,24 @@ project's nodes only.** The contract:
 `src/main/pty-manager.ts` runs each terminal inside a persistent tmux session
 (`tmux new-session -A -D -s nt-<nodeId>`) on a dedicated socket (`-L node-terminal`) with
 a generated config (`-f <userData>/tmux.conf`, so the user's `~/.tmux.conf` never
-interferes; status bar off, mouse on, 50k history). Because the tmux *server* outlives the
-app, sessions survive when no client is attached.
+interferes; status bar off, **mouse off**, 50k history, `set-clipboard on`, and a
+`terminal-overrides ',*:smcup@:rmcup@'`). Because the tmux *server* outlives the app, sessions
+survive when no client is attached.
+
+**Why mouse off + `smcup@:rmcup@` (do not "fix" this back):** selection and scrollback belong to
+the **emulator**, not to tmux.
+- `mouse off` → a drag is xterm's own selection (which xterm can copy — see the terminal node kind
+  below). With `mouse on`, a drag became a tmux *copy-mode* selection that the emulator cannot see,
+  so Cmd+C never worked and copying depended on a macOS-only `pbcopy` pipe. Apps that request mouse
+  tracking themselves (vim, htop) still get their mouse events — tmux forwards those regardless.
+- `smcup@:rmcup@` → blanking those capabilities makes the tmux *client* emit no `\e[?1049h`, i.e.
+  it stays on the **normal screen**. The alternate screen has **no scrollback**, so with tmux on it
+  neither xterm's scrollback nor the history we hydrate on a warm reattach would be reachable, and
+  the wheel would scroll nothing.
+- **Accepted trade:** because tmux stays on the normal screen, an alternate-screen *application*
+  (`less`, `vim`, `git log`'s pager) now spills its scrolled frames into the emulator's scrollback,
+  where they can evict real history against the 10k-line cap. That is inherent to the design (the
+  alt screen has no scrollback, so it is one or the other) — a conscious trade, not an oversight.
 
 Lifecycle, by intent:
 - **Node unmount (project switch)** → the RENDERER **parks** the terminal (`TerminalNode.tsx`
@@ -189,6 +204,24 @@ session (you can't keep a live OS process across a reboot):
   --resume`) when known, else the bare `launchCmd`. The one-shot `data.initialCommand` still wins
   on the very first open, so the agent is never double-launched.
 
+### Seeding a fresh xterm (three cases — `attachReplay` in `terminal/terminal-config.ts`)
+
+**xterm owns the scrollback now** (tmux's mouse is off): the buffer holds
+`xtermScrollback(settings.tmuxScrollback)` lines — the same setting as tmux's `history-limit`,
+floored at 1000 and capped at `XTERM_SCROLLBACK_MAX` (10000) because the cost is per node. A newly
+mounted xterm is empty, so on attach exactly one of:
+- **`none`** — the terminal was **parked** (its buffer is still live and correct), or it is a
+  brand-new node with an `initialCommand`. Seeding either would duplicate content.
+- **`cold-snapshot`** (`fresh` — reboot/first open) — replay the persisted `scrollback-store`
+  snapshot, with a "session restored" separator (the process is genuinely gone).
+- **`warm-history`** (`!fresh` — app restart, tmux still alive) — tmux redraws only the **visible
+  screen**, so everything above it is pulled from tmux's own history via
+  `transport.captureHistory(nodeId)` (`tmux capture-pane`) and written into xterm **with no
+  separator**: this is the session's real history, not a restore boundary. It goes through the
+  **transport** (`LocalTransport` → `pty.captureHistory`; `RemoteTransport` → the host's
+  `pty.captureHistory` RPC over the relay), because a relay node's tmux session lives on the
+  **host** — calling the local `PtyManager` would return `''` and the node would come up blank.
+
 ## Terminal node lifecycle (gotchas)
 
 `src/renderer/nodes/TerminalNode.tsx` is the trickiest file:
@@ -212,10 +245,21 @@ session (you can't keep a live OS process across a reboot):
   `settings.panHoverDelay` (default 600 ms) before the terminal takes focus — before that,
   drag = move node, scroll = pan canvas. **Cmd/Ctrl+M** (while hovered) toggles a markdown
   render of the captured output. Tag chips via `NodeTags`.
+  **Selection + copy** is the emulator's (tmux's mouse is off): drag to select, wheel to scroll
+  xterm's scrollback. Copy chords (`copyKeyAction`/`isCopyShortcut`): **Cmd+C** (mac),
+  **Ctrl+Shift+C** and **Ctrl+Insert** (Linux/Windows) — matched on `e.key` *or* the physical
+  `KeyC`, so non-Latin layouts still copy. A copy chord is **always swallowed**, selection or not:
+  letting Ctrl+Shift+C fall through would reach the pty as `\x03` (SIGINT). Ctrl+Insert exists
+  because Chromium reserves Ctrl+Shift+C for the inspector and a page cannot `preventDefault()` it
+  — which is where Server Edition users land. Plain **Ctrl+C** is never intercepted. Inside an app
+  that requests mouse tracking (vim, htop) the drag belongs to the app: hold **Option** (mac —
+  xterm's `macOptionClickForcesSelection`) or **Shift** (Linux/Windows) while dragging to bypass it
+  and select in xterm instead. `OSC 52` writes (vim `"+y`, gh, yazi) still reach the
+  clipboard via the terminal's own OSC handler (write-only — a read query is refused).
 - **Agent** (`createAgentNode(agentId, …)`) — a terminal preset that runs an agent CLI as its
   `initialCommand` (runs once on open via `transport.write`, then cleared), with `data.agentId`
-  set. Builtins (`claude`/`codex`/`gemini`) come from `AGENT_CONFIG` (clay color etc.);
-  `createClaudeNode` is the `'claude'` wrapper. Agent nodes get extra behavior **gated by the
+  set. Builtins (`claude`/`codex`/`gemini`) come from `AGENT_CONFIG` (clay color etc.).
+  Agent nodes get extra behavior **gated by the
   agent's capabilities** (see **Agent support** below): a busy/working badge + unread dot +
   completion notification + session-name chip (hook-capable agents), content search, and the
   Claude-only **Branch conversation** action. Custom user-defined agents spawn + show
@@ -269,13 +313,49 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   (claude/codex/gemini: id, label, spawn command, color, …) keyed by an **open** `AgentId`
   type (so custom ids fit). Capabilities are membership lists, not flags:
   `AGENT_HOOK_TARGETS`, `RESUMABLE_AGENTS`, `SUBAGENT_CAPABLE`, `RECURRING_CAPABLE`,
-  `BRANCH_CAPABLE`, `CONTEXT_LINK_CAPABLE`, `USAGE_CAPABLE`, `CHAT_CAPABLE`, with helpers (`hasHooks`,
-  `canBranch`, `canContextLink`, `canChat`, …). Branch, the usage indicator and the
-  SDK **chat node** stay **Claude-only** purely by being in only `BRANCH_CAPABLE` /
-  `USAGE_CAPABLE` / `CHAT_CAPABLE`; **Context Link** now spans the three builtins
+  `BRANCH_CAPABLE`, `CONTEXT_LINK_CAPABLE`, `USAGE_CAPABLE`, `CHAT_CAPABLE`,
+  `PERMISSION_MODE_CAPABLE`, with helpers (`hasHooks`,
+  `canBranch`, `canContextLink`, `canChat`, `hasPermissionMode`, …). Branch, the usage indicator, the
+  SDK **chat node** and the permission mode stay **Claude-only** purely by being in only `BRANCH_CAPABLE` /
+  `USAGE_CAPABLE` / `CHAT_CAPABLE` / `PERMISSION_MODE_CAPABLE`; **Context Link** now spans the three builtins
   (`CONTEXT_LINK_CAPABLE = claude/codex/gemini`) (see the `chat` node kind above). UI gates
   on these helpers — no hardcoded `=== 'claude'`. **Custom agents** (user-defined in Settings, `customAgents`) are in
   no capability list: spawn + terminal-title + process status only.
+- **Permission mode** (agents in `PERMISSION_MODE_CAPABLE`, Claude-only) — the mode a session
+  **starts** in (`claude --permission-mode <mode>`; Shift+Tab still cycles it at runtime).
+  `settings.claudePermissionMode` (global, default **`auto`** — a behavior change for existing
+  users, who previously got a prompt per action) is overridden per project by
+  `project.defaultPermissionMode` (persisted to `.nodeterm/project.json`, so a `bypassPermissions`
+  override travels to everyone who clones the repo — the tab menu warns). Modes are
+  `manual | auto | acceptEdits | plan | bypassPermissions`, labelled once in
+  `PERMISSION_MODE_LABELS` (from which `ALL_PERMISSION_MODES` is derived — the dropdown and the
+  validator can't desync). `resolvePermissionMode(project, settings)` is the resolver
+  (`renderer/state/permissionMode.ts` `activePermissionMode()` binds it to the live stores **and
+  applies the version gate below**), and **`withPermissionMode(cmd, agentId, mode)` is the single
+  funnel through which every agent-node launch site appends the flag** (new node, cold-restore
+  resume, Branch, handoff/transfer, explain-commit, add-agent, canvas-control open-agent + team
+  spawn). UI: Settings → Agents, and the tab ⌄ menu for the per-project override.
+  **Version gate (`auto` only):** `--permission-mode auto` exists only in **Claude Code ≥ 2.1.71**;
+  older CLIs validate the value against their own choices list and **exit 1** — and `auto` is the
+  default, so an ungated flag would kill every Claude launch on an older CLI. So the CLI is probed
+  (`core/claude-cli.ts` → `claude --version`, memoized, registered on `CorePlatform` so **both**
+  shells serve it; reached from the renderer via `window.nodeTerminal.claude.cliCaps()`, with a
+  **real** ws-bridge implementation) and `gatePermissionMode(mode, autoSupported)` degrades **only
+  `auto`**, and only to `manual` = **no flag** = the bare pre-feature command. Everything **fails
+  open**: unknown/unreadable version, a probe that failed or hasn't answered yet ⇒ bare command,
+  never a blocked launch; the other four modes are never touched by the gate, and the user's
+  *setting* stays `auto` (only the emitted command line changes). **SSH projects** are gated on the
+  **remote** host's CLI, never the local one: `SshProjectManager.connect` probes `claude --version`
+  on the host (through a login shell — an ssh exec channel's rc file usually bails out early) and
+  caches the answer on the connection → `useSshConn`; not connected / not yet probed ⇒ no `auto`
+  flag. The cold-restore relaunch `await`s the (shell-warmed) probe because it fires on mount.
+  **Security:** mode values come from hand-editable, git-shared JSON and end up interpolated into
+  a shell command line (tmux `send-keys`), so `permissionModeFlag` **re-validates** the mode at the
+  interpolation site (the type is compile-time only) — an unrecognized mode yields **no flag**, i.e.
+  the bare, safe command. `'manual'` likewise yields no flag, reproducing the pre-feature command
+  bit-for-bit. **Not** covered: the SDK **chat node** — it was cut from this work and
+  `core/chat-driver.ts` still hard-codes `permissionMode: 'default'`, so the setting and the
+  per-project override apply to **terminal (CLI) agent nodes only**.
 - **State via each agent's hooks → shared 4-state model** — detection uses the agent's own
   hooks, **not** output parsing. `src/shared/agents/normalize.ts` has per-agent normalizers
   (`normalizeClaude`/`normalizeCodex`/`normalizeGemini`) that map each agent's native hook
