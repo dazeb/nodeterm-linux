@@ -619,6 +619,20 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
     so nothing is destroyed on a bad guess. Real support needs the worktree path to derive from the
     connection's cached `remoteHome` and `pathExists` to stat the **remote** fs (a `test -e` over the
     ControlMaster).
+  - **Mobile companion: not applicable in v1** (the three-surfaces call, made deliberately). A
+    worktree binds to a **group frame** on the canvas, and *nodeterm mobile* (`~/projects/nodeterm-ios`)
+    has no canvas — it attaches to tmux sessions over the `TerminalTransport` protocol, which carries
+    no group/binding concept at all. So there is nothing to degrade gracefully: a worktree's terminals
+    are ordinary tmux sessions and mobile already reaches them, it simply cannot see that they belong
+    to a worktree. Surfacing the binding (a read-only "worktree: <branch>" label per session, say)
+    would mean extending the transport protocol — a **follow-up in the iOS repo**, not this branch.
+    Creation/merge/remove stay desktop+server only: they are destructive git operations, and a phone
+    is the last place to confirm one.
+  - **Known follow-up** — the Explorer tree and the ⌘K file index stay scoped to the **project cwd**,
+    so a bound worktree's files are not browsable/searchable from them (its terminals and editor
+    nodes work fine). Deliberately out of scope here: both index a single root, and making them
+    scope-aware is the same "which checkout am I looking at?" question Source Control already answers
+    with `ScmScope` — that is the seam to reuse when it is built.
 - **Settings** (`SettingsPage.tsx`, ⚙ / ⌘,): font/cursor (live to xterm + Monaco), default
   shell, grid + snap, pan-hover delay, double-click focus, accent, tmux on/scrollback,
   commit agent, `seenShortcuts`.
