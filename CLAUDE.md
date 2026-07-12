@@ -82,8 +82,7 @@ adding terminal-session features, extend the interface — do not reach around i
 **React Flow is the single live source of truth** for nodes. There is intentionally no
 separate store mirroring node state — earlier dual-source designs caused sync bugs.
 `src/renderer/state/workspace.ts` holds only pure helpers: the color palette, the node
-factories (`createTerminalNode`, `createAgentNode(agentId, …)` — with `createClaudeNode` kept
-as a thin `createAgentNode('claude', …)` wrapper, `createStickyNode`, `createGroupNode`,
+factories (`createTerminalNode`, `createAgentNode(agentId, …)`, `createStickyNode`, `createGroupNode`,
 `createEditorNode`, `createDiffNode`, `createChatNode`), the group transforms (`groupSelectedNodes`,
 `ungroupNodes`, `duplicateNode`), and the `nodeStatesToFlow` / `flowToNodeStates`
 serializers. Node kinds: `terminal | sticky | group | editor | diff | chat`. A node's `data`
@@ -259,8 +258,8 @@ mounted xterm is empty, so on attach exactly one of:
   clipboard via the terminal's own OSC handler (write-only — a read query is refused).
 - **Agent** (`createAgentNode(agentId, …)`) — a terminal preset that runs an agent CLI as its
   `initialCommand` (runs once on open via `transport.write`, then cleared), with `data.agentId`
-  set. Builtins (`claude`/`codex`/`gemini`) come from `AGENT_CONFIG` (clay color etc.);
-  `createClaudeNode` is the `'claude'` wrapper. Agent nodes get extra behavior **gated by the
+  set. Builtins (`claude`/`codex`/`gemini`) come from `AGENT_CONFIG` (clay color etc.).
+  Agent nodes get extra behavior **gated by the
   agent's capabilities** (see **Agent support** below): a busy/working badge + unread dot +
   completion notification + session-name chip (hook-capable agents), content search, and the
   Claude-only **Branch conversation** action. Custom user-defined agents spawn + show
@@ -314,13 +313,49 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   (claude/codex/gemini: id, label, spawn command, color, …) keyed by an **open** `AgentId`
   type (so custom ids fit). Capabilities are membership lists, not flags:
   `AGENT_HOOK_TARGETS`, `RESUMABLE_AGENTS`, `SUBAGENT_CAPABLE`, `RECURRING_CAPABLE`,
-  `BRANCH_CAPABLE`, `CONTEXT_LINK_CAPABLE`, `USAGE_CAPABLE`, `CHAT_CAPABLE`, with helpers (`hasHooks`,
-  `canBranch`, `canContextLink`, `canChat`, …). Branch, the usage indicator and the
-  SDK **chat node** stay **Claude-only** purely by being in only `BRANCH_CAPABLE` /
-  `USAGE_CAPABLE` / `CHAT_CAPABLE`; **Context Link** now spans the three builtins
+  `BRANCH_CAPABLE`, `CONTEXT_LINK_CAPABLE`, `USAGE_CAPABLE`, `CHAT_CAPABLE`,
+  `PERMISSION_MODE_CAPABLE`, with helpers (`hasHooks`,
+  `canBranch`, `canContextLink`, `canChat`, `hasPermissionMode`, …). Branch, the usage indicator, the
+  SDK **chat node** and the permission mode stay **Claude-only** purely by being in only `BRANCH_CAPABLE` /
+  `USAGE_CAPABLE` / `CHAT_CAPABLE` / `PERMISSION_MODE_CAPABLE`; **Context Link** now spans the three builtins
   (`CONTEXT_LINK_CAPABLE = claude/codex/gemini`) (see the `chat` node kind above). UI gates
   on these helpers — no hardcoded `=== 'claude'`. **Custom agents** (user-defined in Settings, `customAgents`) are in
   no capability list: spawn + terminal-title + process status only.
+- **Permission mode** (agents in `PERMISSION_MODE_CAPABLE`, Claude-only) — the mode a session
+  **starts** in (`claude --permission-mode <mode>`; Shift+Tab still cycles it at runtime).
+  `settings.claudePermissionMode` (global, default **`auto`** — a behavior change for existing
+  users, who previously got a prompt per action) is overridden per project by
+  `project.defaultPermissionMode` (persisted to `.nodeterm/project.json`, so a `bypassPermissions`
+  override travels to everyone who clones the repo — the tab menu warns). Modes are
+  `manual | auto | acceptEdits | plan | bypassPermissions`, labelled once in
+  `PERMISSION_MODE_LABELS` (from which `ALL_PERMISSION_MODES` is derived — the dropdown and the
+  validator can't desync). `resolvePermissionMode(project, settings)` is the resolver
+  (`renderer/state/permissionMode.ts` `activePermissionMode()` binds it to the live stores **and
+  applies the version gate below**), and **`withPermissionMode(cmd, agentId, mode)` is the single
+  funnel through which every agent-node launch site appends the flag** (new node, cold-restore
+  resume, Branch, handoff/transfer, explain-commit, add-agent, canvas-control open-agent + team
+  spawn). UI: Settings → Agents, and the tab ⌄ menu for the per-project override.
+  **Version gate (`auto` only):** `--permission-mode auto` exists only in **Claude Code ≥ 2.1.71**;
+  older CLIs validate the value against their own choices list and **exit 1** — and `auto` is the
+  default, so an ungated flag would kill every Claude launch on an older CLI. So the CLI is probed
+  (`core/claude-cli.ts` → `claude --version`, memoized, registered on `CorePlatform` so **both**
+  shells serve it; reached from the renderer via `window.nodeTerminal.claude.cliCaps()`, with a
+  **real** ws-bridge implementation) and `gatePermissionMode(mode, autoSupported)` degrades **only
+  `auto`**, and only to `manual` = **no flag** = the bare pre-feature command. Everything **fails
+  open**: unknown/unreadable version, a probe that failed or hasn't answered yet ⇒ bare command,
+  never a blocked launch; the other four modes are never touched by the gate, and the user's
+  *setting* stays `auto` (only the emitted command line changes). **SSH projects** are gated on the
+  **remote** host's CLI, never the local one: `SshProjectManager.connect` probes `claude --version`
+  on the host (through a login shell — an ssh exec channel's rc file usually bails out early) and
+  caches the answer on the connection → `useSshConn`; not connected / not yet probed ⇒ no `auto`
+  flag. The cold-restore relaunch `await`s the (shell-warmed) probe because it fires on mount.
+  **Security:** mode values come from hand-editable, git-shared JSON and end up interpolated into
+  a shell command line (tmux `send-keys`), so `permissionModeFlag` **re-validates** the mode at the
+  interpolation site (the type is compile-time only) — an unrecognized mode yields **no flag**, i.e.
+  the bare, safe command. `'manual'` likewise yields no flag, reproducing the pre-feature command
+  bit-for-bit. **Not** covered: the SDK **chat node** — it was cut from this work and
+  `core/chat-driver.ts` still hard-codes `permissionMode: 'default'`, so the setting and the
+  per-project override apply to **terminal (CLI) agent nodes only**.
 - **State via each agent's hooks → shared 4-state model** — detection uses the agent's own
   hooks, **not** output parsing. `src/shared/agents/normalize.ts` has per-agent normalizers
   (`normalizeClaude`/`normalizeCodex`/`normalizeGemini`) that map each agent's native hook
