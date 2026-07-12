@@ -290,7 +290,7 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   funnel through which every agent-node launch site appends the flag** (new node, cold-restore
   resume, Branch, handoff/transfer, explain-commit, add-agent, canvas-control open-agent + team
   spawn). UI: Settings → Agents, and the tab ⌄ menu for the per-project override.
-  **Version gate (`auto` only):** `--permission-mode auto` exists only in **Claude Code ≥ 2.1.90**;
+  **Version gate (`auto` only):** `--permission-mode auto` exists only in **Claude Code ≥ 2.1.71**;
   older CLIs validate the value against their own choices list and **exit 1** — and `auto` is the
   default, so an ungated flag would kill every Claude launch on an older CLI. So the CLI is probed
   (`core/claude-cli.ts` → `claude --version`, memoized, registered on `CorePlatform` so **both**
