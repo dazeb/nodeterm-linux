@@ -145,11 +145,12 @@ project's nodes only.** The contract:
 (`tmux new-session -A -D -s nt-<nodeId>`) on a dedicated socket (`-L node-terminal`) with
 a generated config (`-f <userData>/tmux.conf`, so the user's `~/.tmux.conf` never
 interferes; status bar off, **mouse off**, 50k history, `set-clipboard on`, and a
-`terminal-overrides ',*:smcup@:rmcup@'`). Because the tmux *server* outlives the app, sessions
+`terminal-overrides ',*:smcup@:rmcup@:indn@'`). Because the tmux *server* outlives the app, sessions
 survive when no client is attached.
 
-**Why mouse off + `smcup@:rmcup@` (do not "fix" this back):** selection and scrollback belong to
-the **emulator**, not to tmux.
+**Why mouse off + `smcup@:rmcup@:indn@` (do not "fix" any of the three back):** selection and
+scrollback belong to the **emulator**, not to tmux. All three are load-bearing — drop any one and
+the wheel scrolls nothing.
 - `mouse off` → a drag is xterm's own selection (which xterm can copy — see the terminal node kind
   below). With `mouse on`, a drag became a tmux *copy-mode* selection that the emulator cannot see,
   so Cmd+C never worked and copying depended on a macOS-only `pbcopy` pipe. Apps that request mouse
@@ -158,6 +159,12 @@ the **emulator**, not to tmux.
   it stays on the **normal screen**. The alternate screen has **no scrollback**, so with tmux on it
   neither xterm's scrollback nor the history we hydrate on a warm reattach would be reachable, and
   the wheel would scroll nothing.
+- `indn@` → with `indn` (parm_index) advertised, tmux scrolls the pane with **CSI S** (SU), and
+  **xterm.js implements SU as a region scroll that DISCARDS the lines it pushes off the top** — they
+  never reach the scrollback (real xterm saves them; xterm.js does not). Blanked, tmux falls back to
+  plain line feeds at the bottom row, which xterm *does* save. Measured with the shipped conf: 80
+  lines of output left `baseY=0` (nothing scrollable) with `indn` advertised, `baseY=58` without.
+  This is the bug that made local projects unscrollable after the mouse was turned off.
 - **Accepted trade:** because tmux stays on the normal screen, an alternate-screen *application*
   (`less`, `vim`, `git log`'s pager) now spills its scrolled frames into the emulator's scrollback,
   where they can evict real history against the 10k-line cap. That is inherent to the design (the
