@@ -555,12 +555,17 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   worktrees listed for adoption. (Both git IPCs existed before this feature and had **zero**
   renderer callers, which is why it was unusable: the dialog's repo field was always empty and had
   to be typed by hand. Don't re-strand them.)
-  - **One store, one poller** — `renderer/state/worktrees.ts` is the **only** caller of the
-    worktree-list / status git IPCs; the group chip, the creation dialog and the Source Control
-    panel all read that store. Three independent pollers would triple the `git` subprocess load and
-    drift out of sync. It is **epoch-guarded** (a project switch bumps the epoch, so a stale
-    in-flight refresh can never overwrite the newer project's `repoRoot`/orphans — worktrees are
-    *created* under `repoRoot` and orphans are offered for *deletion*) and **fails open**.
+  - **One store, one poller** — `renderer/state/worktrees.ts` is the **only** caller of the worktree
+    /status *read* IPCs (`git.repoRoot`, `git.worktreeList`, `git.status`); the group chip, the
+    creation dialog and the Source Control panel all read that store. Three independent pollers would
+    triple the `git` subprocess load and drift out of sync. It is **epoch-guarded** (a project switch
+    bumps the epoch, so a stale in-flight refresh can never overwrite the newer project's
+    `repoRoot`/orphans — worktrees are *created* under `repoRoot` and orphans are offered for
+    *deletion*) and **fails open**. Exactly **two** direct `git.status` reads live outside it, both in
+    `Canvas.tsx` and both deliberate: the one-shot probes on the **Remove** confirm (the dirty-file
+    count in the warning) and on **↪ Move into worktree** (staleness only arrives by poll, so the
+    directory is re-checked immediately before an irreversible session kill). Anything recurring
+    belongs in the store.
   - **Scoped Source Control** — the panel operates on a selected `ScmScope` (the main checkout or a
     bound worktree). A worktree scope's **id is its group node id**, which is what lets the canvas
     selection preselect it. `scmScopes` / `defaultScmScope` / `selectedScmGroupId`
@@ -576,9 +581,10 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   - **Two non-obvious facts the code depends on — do not "simplify" these away:**
     1. `git worktree list --porcelain` **keeps listing a worktree whose directory was deleted
        behind git's back**, tagging it `prunable` — and that tag only exists on **git ≥ 2.36**. So
-       `worktreeList` additionally **stats** each path (`prunable: e.prunable || !pathExists(path)`),
-       or the whole stale/orphan story silently fails on the Server Edition's own target platform
-       (Debian 11 / Ubuntu 20.04 ship git 2.30).
+       `worktreeList` additionally **stats** each path through an injected `pathExists` seam
+       (`prunable: e.prunable || !pathExists(path)`; `git-service` wires `fs.existsSync`), or the
+       whole stale/orphan story silently fails on the Server Edition's own target platform (Debian 11
+       / Ubuntu 20.04 ship git 2.30).
     2. **A failed git read is never evidence of absence.** `listWorktrees` returns `{ok, entries}`
        so "git failed" (spawn EAGAIN, NFS hiccup, corrupt index) stays distinguishable from "git
        listed nothing" — a transient failure must never be read as "the worktree is gone", at any
@@ -589,15 +595,30 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
     created; one the user merely **adopted** unbinds by default, and deleting its directory is an
     explicit opt-in that **defaults to off** (its branch is kept either way).
     `isDangerousWorktreeRemovalPath` refuses a path that is the repo, `$HOME`, `/`, or an ancestor
-    of any of them. **Merge** is behind a confirm and pushes to `origin/<base>` **only when the user
-    ticks a box that defaults to off** — a push to origin cannot be politely undone.
+    of any of them, on **every** removal path. **Merge** always confirms — it merges into the base's
+    *working tree* (`decideMergeStrategy`: merge in the base's checkout when it is clean, else a
+    `fetch . branch:base` when the base is checked out nowhere, else blocked) — and its push to
+    `origin/<base>` is disclosed in that dialog and **opt-in, default off**: a push to origin cannot
+    be politely undone.
+  - **Every path that drops a bound group goes through unbind** — Unbind, Remove, **Ungroup** and
+    **Delete** all route through `releaseWorktreeBinding`, the one place that knows what a dropped
+    binding owes: `displacedByWorktree`'s descendants (terminals/chats whose cwd sits inside the
+    worktree) get that cwd taken off them, and git's registration gets a `pruneOnly` prune. Ungroup
+    and group-delete *keep* the children, so skipping this left a **dead cwd persisted in
+    `project.json`** — invisible until a reboot cold-starts the terminal into a directory that is not
+    there — and left a stale registration that makes a later `worktree add` at the same path fail.
   - **SSH projects: not supported in v1** — every affordance is shown **disabled with that reason**
     (a silently-missing row teaches nothing). The gate asks whether the node is a **remote session**
     (`data.ssh` / `data.sshRemoteTmux`) or the project is an SSH project — **not** `data.remote`,
     which only *relay* nodes carry: guarding the wrong field let a live remote tmux session be
     killed into a local path that does not exist on the host (`isRemoteSessionNode` asks about all
-    three). Real support needs the worktree path to derive from the connection's cached `remoteHome`
-    and both the safety guard and `pathExists` to run on the **remote** fs.
+    three). The ops themselves **refuse** a remote repo (`git-service.isRemoteRepo`, via
+    `resolveGitRemote`) rather than guess: the `git` executor routes over the project's ControlMaster
+    while `pathExists` is a **local** `fs.existsSync`, so answering would stat the wrong machine and
+    report *everything is gone* — a refusal is a plain failed op and, crucially, never `worktreeGone`,
+    so nothing is destroyed on a bad guess. Real support needs the worktree path to derive from the
+    connection's cached `remoteHome` and `pathExists` to stat the **remote** fs (a `test -e` over the
+    ControlMaster).
 - **Settings** (`SettingsPage.tsx`, ⚙ / ⌘,): font/cursor (live to xterm + Monaco), default
   shell, grid + snap, pan-hover delay, double-click focus, accent, tmux on/scrollback,
   commit agent, `seenShortcuts`.
