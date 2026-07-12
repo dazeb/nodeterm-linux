@@ -285,17 +285,32 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   `manual | auto | acceptEdits | plan | bypassPermissions`, labelled once in
   `PERMISSION_MODE_LABELS` (from which `ALL_PERMISSION_MODES` is derived — the dropdown and the
   validator can't desync). `resolvePermissionMode(project, settings)` is the resolver
-  (`renderer/state/permissionMode.ts` `activePermissionMode()` binds it to the live stores), and
-  **`withPermissionMode(cmd, agentId, mode)` is the single funnel through which every agent-node
-  launch site appends the flag** (new node, cold-restore resume, Branch, handoff/transfer,
-  explain-commit, add-agent, canvas-control open-agent + team spawn). UI: Settings → Agents, and
-  the tab ⌄ menu for the per-project override.
+  (`renderer/state/permissionMode.ts` `activePermissionMode()` binds it to the live stores **and
+  applies the version gate below**), and **`withPermissionMode(cmd, agentId, mode)` is the single
+  funnel through which every agent-node launch site appends the flag** (new node, cold-restore
+  resume, Branch, handoff/transfer, explain-commit, add-agent, canvas-control open-agent + team
+  spawn). UI: Settings → Agents, and the tab ⌄ menu for the per-project override.
+  **Version gate (`auto` only):** `--permission-mode auto` exists only in **Claude Code ≥ 2.1.90**;
+  older CLIs validate the value against their own choices list and **exit 1** — and `auto` is the
+  default, so an ungated flag would kill every Claude launch on an older CLI. So the CLI is probed
+  (`core/claude-cli.ts` → `claude --version`, memoized, registered on `CorePlatform` so **both**
+  shells serve it; reached from the renderer via `window.nodeTerminal.claude.cliCaps()`, with a
+  **real** ws-bridge implementation) and `gatePermissionMode(mode, autoSupported)` degrades **only
+  `auto`**, and only to `manual` = **no flag** = the bare pre-feature command. Everything **fails
+  open**: unknown/unreadable version, a probe that failed or hasn't answered yet ⇒ bare command,
+  never a blocked launch; the other four modes are never touched by the gate, and the user's
+  *setting* stays `auto` (only the emitted command line changes). **SSH projects** are gated on the
+  **remote** host's CLI, never the local one: `SshProjectManager.connect` probes `claude --version`
+  on the host (through a login shell — an ssh exec channel's rc file usually bails out early) and
+  caches the answer on the connection → `useSshConn`; not connected / not yet probed ⇒ no `auto`
+  flag. The cold-restore relaunch `await`s the (shell-warmed) probe because it fires on mount.
   **Security:** mode values come from hand-editable, git-shared JSON and end up interpolated into
   a shell command line (tmux `send-keys`), so `permissionModeFlag` **re-validates** the mode at the
   interpolation site (the type is compile-time only) — an unrecognized mode yields **no flag**, i.e.
   the bare, safe command. `'manual'` likewise yields no flag, reproducing the pre-feature command
-  bit-for-bit. **Not** covered yet: the SDK **chat node** (`core/chat-driver.ts` still hard-codes
-  `permissionMode: 'default'`).
+  bit-for-bit. **Not** covered: the SDK **chat node** — it was cut from this work and
+  `core/chat-driver.ts` still hard-codes `permissionMode: 'default'`, so the setting and the
+  per-project override apply to **terminal (CLI) agent nodes only**.
 - **State via each agent's hooks → shared 4-state model** — detection uses the agent's own
   hooks, **not** output parsing. `src/shared/agents/normalize.ts` has per-agent normalizers
   (`normalizeClaude`/`normalizeCodex`/`normalizeGemini`) that map each agent's native hook
