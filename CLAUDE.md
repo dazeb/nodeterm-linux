@@ -263,6 +263,13 @@ mounted xterm is empty, so on attach exactly one of:
   xterm's `macOptionClickForcesSelection`) or **Shift** (Linux/Windows) while dragging to bypass it
   and select in xterm instead. `OSC 52` writes (vim `"+y`, gh, yazi) still reach the
   clipboard via the terminal's own OSC handler (write-only — a read query is refused).
+  **Shift+Enter** is remapped to `\x1b\r` (ESC+CR / M-Enter) so agent CLIs insert a newline
+  instead of submitting (`terminalKeyAction` / `SHIFT_ENTER_SEQ` in `terminal-config.ts`; sent in
+  all terminals — harmless in a plain shell). **Cmd (mac) / Ctrl+click** opens links in the
+  output: URLs → default browser (`@xterm/addon-web-links`), file paths → editor node and
+  directories → Explorer reveal (`terminal/file-links.ts`, existence-verified against the project
+  fs via cached parent-dir listings, with `path:line[:col]` compiler-output suffixes; relay-remote
+  nodes have no client fs so they are URL-only).
 - **Agent** (`createAgentNode(agentId, …)`) — a terminal preset that runs an agent CLI as its
   `initialCommand` (runs once on open via `transport.write`, then cleared), with `data.agentId`
   set. Builtins (`claude`/`codex`/`gemini`) come from `AGENT_CONFIG` (clay color etc.).
@@ -537,7 +544,13 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
 - **Command palette** (`CommandPalette.tsx`): ⌘/Ctrl+K; `Canvas.buildCommands` (create,
   switch project, jump to node by title/tag, open file…).
 - **Explorer** (`ExplorerPanel.tsx`, 🗂 / ⌘⇧E): lazy file tree of the active project `cwd`
-  (`fs:list`); click a file → opens an editor node; right-click → Copy Path / Reveal.
+  (`fs:list`); click a file → opens an editor node; right-click → Copy Path / Reveal /
+  **New File… / New Folder…** (empty-area right-click targets the root; SSH projects create on the
+  host). Canvas pane right-click and ⌘K also expose **New file…** (creates under the project cwd,
+  opens an editor node). These use `mkdir` + `exists` added to `FsApi`/`SshFsApi` across
+  desktop/server/SSH (`core/fs-ops.ts`, `main/ssh-fs.ts`; relay remote-fs degrades to `false`).
+  Expanded dirs **persist per project** across drawer close + app restart (`state/explorer.ts`
+  zustand store, localStorage `nodeterm.explorerExpanded`).
 - **Source Control** (`main/git-service.ts` system `git` + `gh`, `SourceControlPanel.tsx`,
   ⎇): file-level **stage/unstage** (+/−), **discard**, click a file → **diff node**,
   **branch switch/create**, commit (message box at top) + push / sync / publish, **gh
