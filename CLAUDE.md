@@ -538,7 +538,59 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   commits. **AI commit message** (✦ Generate) and **AI terminal naming** both use
   `main/commit-message.ts`: a BYO local agent CLI (claude/codex/custom) spawned read-only on
   the staged diff / captured terminal output (no built-in model); agent + extra prompt in
-  Settings.
+  Settings. The panel operates on a **selected scope**, not on the project cwd — see Worktrees.
+- **Worktrees** (bound to **group frames**) — a git worktree binds to a group node
+  (`data.worktree: GroupWorktree {repoPath, branch, baseRef, path, createdByApp}`, persisted), and
+  every node created inside that frame inherits the worktree path as its `cwd`
+  (`cwdForNewNodeIn`) — the frame *is* the binding, so an agent per branch is just a group per
+  branch. Creation is **one step** — **"New worktree…"** from the pane menu / command palette /
+  Source Control — with the repo resolved from the project cwd via `git.repoRoot()` and existing
+  worktrees listed for adoption. (Both git IPCs existed before this feature and had **zero**
+  renderer callers, which is why it was unusable: the dialog's repo field was always empty and had
+  to be typed by hand. Don't re-strand them.)
+  - **One store, one poller** — `renderer/state/worktrees.ts` is the **only** caller of the
+    worktree-list / status git IPCs; the group chip, the creation dialog and the Source Control
+    panel all read that store. Three independent pollers would triple the `git` subprocess load and
+    drift out of sync. It is **epoch-guarded** (a project switch bumps the epoch, so a stale
+    in-flight refresh can never overwrite the newer project's `repoRoot`/orphans — worktrees are
+    *created* under `repoRoot` and orphans are offered for *deletion*) and **fails open**.
+  - **Scoped Source Control** — the panel operates on a selected `ScmScope` (the main checkout or a
+    bound worktree). A worktree scope's **id is its group node id**, which is what lets the canvas
+    selection preselect it. `scmScopes` / `defaultScmScope` / `selectedScmGroupId`
+    (`shared/scm-scope.ts`) decide the list and the default. The panel derives its `cwd` **once** so
+    its ~49 call sites follow — and every Canvas callback it invokes (`onOpenDiff`,
+    `onOpenCommitDiff`, `onExplainCommit`, `onRunInTerminal`) must take the **scope's** cwd, never
+    the project's.
+  - **Reconciliation** (`shared/worktree-reconcile.ts`) — bindings are reconciled against `git
+    worktree list`: a worktree deleted outside the app makes its group **stale** (chip reads
+    "· missing", Merge/Remove hide, ↪ hides, and nothing spawns into the dead path — Unbind is the
+    only action, and it takes the dead cwd off the children with it); a worktree bound to no group
+    is an **orphan**, recoverable from the creation dialog.
+  - **Two non-obvious facts the code depends on — do not "simplify" these away:**
+    1. `git worktree list --porcelain` **keeps listing a worktree whose directory was deleted
+       behind git's back**, tagging it `prunable` — and that tag only exists on **git ≥ 2.36**. So
+       `worktreeList` additionally **stats** each path (`prunable: e.prunable || !pathExists(path)`),
+       or the whole stale/orphan story silently fails on the Server Edition's own target platform
+       (Debian 11 / Ubuntu 20.04 ship git 2.30).
+    2. **A failed git read is never evidence of absence.** `listWorktrees` returns `{ok, entries}`
+       so "git failed" (spawn EAGAIN, NFS hiccup, corrupt index) stays distinguishable from "git
+       listed nothing" — a transient failure must never be read as "the worktree is gone", at any
+       layer (`ok:false` changes no facts). Staleness from the status poll likewise needs **two
+       consecutive** failed reads (`WORKTREE_STALE_STRIKES`), and the streak is scoped per project
+       so a there-and-back tab switch cannot forget it.
+  - **Destructive safety** — `createdByApp` gates removal: nodeterm deletes only worktrees it
+    created; one the user merely **adopted** unbinds by default, and deleting its directory is an
+    explicit opt-in that **defaults to off** (its branch is kept either way).
+    `isDangerousWorktreeRemovalPath` refuses a path that is the repo, `$HOME`, `/`, or an ancestor
+    of any of them. **Merge** is behind a confirm and pushes to `origin/<base>` **only when the user
+    ticks a box that defaults to off** — a push to origin cannot be politely undone.
+  - **SSH projects: not supported in v1** — every affordance is shown **disabled with that reason**
+    (a silently-missing row teaches nothing). The gate asks whether the node is a **remote session**
+    (`data.ssh` / `data.sshRemoteTmux`) or the project is an SSH project — **not** `data.remote`,
+    which only *relay* nodes carry: guarding the wrong field let a live remote tmux session be
+    killed into a local path that does not exist on the host (`isRemoteSessionNode` asks about all
+    three). Real support needs the worktree path to derive from the connection's cached `remoteHome`
+    and both the safety guard and `pathExists` to run on the **remote** fs.
 - **Settings** (`SettingsPage.tsx`, ⚙ / ⌘,): font/cursor (live to xterm + Monaco), default
   shell, grid + snap, pan-hover delay, double-click focus, accent, tmux on/scrollback,
   commit agent, `seenShortcuts`.
