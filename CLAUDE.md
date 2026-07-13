@@ -108,6 +108,18 @@ Persistence has two layers:
   Unreadable refs render as greyed **unavailable** tabs (never dropped); corrupt project files
   are set aside as `project.json.corrupt-<ts>`. "Open folder…" adopts an existing
   `.nodeterm/project.json` (fresh project id on collision; node ids — tmux names — kept).
+  **SSH mirror safety** (the ".nodeterm reset itself" bug — 12 fresh project ids and 45 orphaned
+  tmux sessions in one field report): remote writes are atomic (`cat > f.tmp && mv`, `sshWriteArgs`);
+  a mirror is never blind-written before the entry has read-compared the server file once
+  (`WorkspaceStore.reconcileSsh` — the single decider; a checked read's `error` ≠ `absent`, and on
+  error it decides NOTHING); cross-lineage conflicts (re-added folder, second machine, git checkout:
+  the server file carries a different project id) are settled by content, not rev alone — an empty
+  side never beats a populated one, adoption re-keys the file to the local project id (node ids =
+  tmux session names are kept so terminals reattach), and a push outbids the losing lineage's rev;
+  a throttled trailing write that drops after its optimistic ack re-owes the mirror
+  (`markUnmirrored`); pending mirrors are flushed before the ControlMasters die at quit; and the
+  SSH dialog **dedupes by endpoint+remoteCwd** (`openSshProject`, same contract as
+  `openFolderProject`) instead of minting a fresh empty project for a folder that already has one.
 - **Live terminal sessions** (tmux): terminals continue where they left off across node
   remounts *and* full app restarts, including running processes. See below.
 
