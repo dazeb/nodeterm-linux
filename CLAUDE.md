@@ -141,34 +141,40 @@ project's nodes only.** The contract:
 
 ## Terminal session continuity (tmux)
 
-`src/main/pty-manager.ts` runs each terminal inside a persistent tmux session
+`src/core/pty-manager.ts` runs each terminal inside a persistent tmux session
 (`tmux new-session -A -D -s nt-<nodeId>`) on a dedicated socket (`-L node-terminal`) with
 a generated config (`-f <userData>/tmux.conf`, so the user's `~/.tmux.conf` never
-interferes; status bar off, **mouse off**, 50k history, `set-clipboard on`, and a
-`terminal-overrides ',*:smcup@:rmcup@:indn@'`). Because the tmux *server* outlives the app, sessions
-survive when no client is attached.
+interferes; status bar off, **mouse on**, 50k history, `set-clipboard on` + `terminal-features
+",*:clipboard"`, and the copy-mode mouse bindings). Because the tmux *server* outlives the app,
+sessions survive when no client is attached. `src/shared/ssh.ts`'s `remoteTmuxConf` is the same
+config for an SSH project's remote tmux.
 
-**Why mouse off + `smcup@:rmcup@:indn@` (do not "fix" any of the three back):** selection and
-scrollback belong to the **emulator**, not to tmux. All three are load-bearing — drop any one and
-the wheel scrolls nothing.
-- `mouse off` → a drag is xterm's own selection (which xterm can copy — see the terminal node kind
-  below). With `mouse on`, a drag became a tmux *copy-mode* selection that the emulator cannot see,
-  so Cmd+C never worked and copying depended on a macOS-only `pbcopy` pipe. Apps that request mouse
-  tracking themselves (vim, htop) still get their mouse events — tmux forwards those regardless.
-- `smcup@:rmcup@` → blanking those capabilities makes the tmux *client* emit no `\e[?1049h`, i.e.
-  it stays on the **normal screen**. The alternate screen has **no scrollback**, so with tmux on it
-  neither xterm's scrollback nor the history we hydrate on a warm reattach would be reachable, and
-  the wheel would scroll nothing.
-- `indn@` → with `indn` (parm_index) advertised, tmux scrolls the pane with **CSI S** (SU), and
-  **xterm.js implements SU as a region scroll that DISCARDS the lines it pushes off the top** — they
-  never reach the scrollback (real xterm saves them; xterm.js does not). Blanked, tmux falls back to
-  plain line feeds at the bottom row, which xterm *does* save. Measured with the shipped conf: 80
-  lines of output left `baseY=0` (nothing scrollable) with `indn` advertised, `baseY=58` without.
-  This is the bug that made local projects unscrollable after the mouse was turned off.
-- **Accepted trade:** because tmux stays on the normal screen, an alternate-screen *application*
-  (`less`, `vim`, `git log`'s pager) now spills its scrolled frames into the emulator's scrollback,
-  where they can evict real history against the 10k-line cap. That is inherent to the design (the
-  alt screen has no scrollback, so it is one or the other) — a conscious trade, not an oversight.
+**tmux owns the mouse — scrolling, selection, and the alternate screen are all its job.** This is
+the native behavior, and it is deliberate:
+- **The wheel scrolls tmux's own history** (`history-limit`), not the emulator's buffer.
+- **The pane is on the alternate screen** (`\e[?1049h`) — capabilities are NOT blanked — which is
+  what keeps a full-screen TUI's input box *put* instead of scrolling away with the text.
+- **Selection is tmux copy-mode.** A drag copies; apps that request mouse tracking themselves
+  (vim, htop) still get their own mouse events — tmux forwards those regardless.
+
+**Do not take scrolling away from tmux again.** A previous design did exactly that (`mouse off` +
+`terminal-overrides ',*:smcup@:rmcup@:indn@'` to keep tmux on the *normal* screen, so its output
+flowed into xterm's scrollback, which was then hydrated from `tmux capture-pane` on reattach). It
+failed structurally: **tmux is a screen PAINTER, not a stream.** Every redraw (attach, resize,
+refresh) erases and repaints, so blank and duplicated rows leaked into the emulator's scrollback —
+users saw black bands and duplicated screens when scrolling up — and the pane stopped behaving
+natively. The hydration that design needed is gone (see the reattach seeding below).
+
+**Copy → the system clipboard, via OSC 52.** `set-clipboard on` **plus** `set -as terminal-features
+",*:clipboard"`: on copy, tmux emits OSC 52 to the attached client, and the renderer's OSC 52
+handler (`TerminalNode.tsx`, `parseOsc52`) writes the system clipboard. Two traps, both measured on
+tmux 3.4:
+- **The `terminal-overrides ',xterm*:Ms=…'` entry does NOT work on tmux 3.2+** — with it, a copy
+  emitted **zero** OSC 52 to the client. `terminal-features` is what actually enables the sequence.
+  Do not "fix" the `Ms=` override back; it is why copying from SSH sessions never worked.
+- **No `pbcopy` pipe.** The copy-mode bindings are bare `copy-pipe-and-cancel` (no command): piping
+  to `pbcopy` was macOS-only, and over SSH it would have copied on the *remote* host anyway. OSC 52
+  is cross-platform and works over SSH.
 
 Lifecycle, by intent:
 - **Node unmount (project switch)** → the RENDERER **parks** the terminal (`TerminalNode.tsx`
@@ -211,23 +217,27 @@ session (you can't keep a live OS process across a reboot):
   --resume`) when known, else the bare `launchCmd`. The one-shot `data.initialCommand` still wins
   on the very first open, so the agent is never double-launched.
 
-### Seeding a fresh xterm (three cases — `attachReplay` in `terminal/terminal-config.ts`)
+### Seeding a fresh xterm (`attachReplay` / `seedPaint` in `terminal/terminal-config.ts`)
 
-**xterm owns the scrollback now** (tmux's mouse is off): the buffer holds
-`xtermScrollback(settings.tmuxScrollback)` lines — the same setting as tmux's `history-limit`,
-floored at 1000 and capped at `XTERM_SCROLLBACK_MAX` (10000) because the cost is per node. A newly
-mounted xterm is empty, so on attach exactly one of:
+A newly mounted xterm is empty. Since tmux paints its own client, there is usually **nothing to
+seed** — the cases are:
 - **`none`** — the terminal was **parked** (its buffer is still live and correct), or it is a
   brand-new node with an `initialCommand`. Seeding either would duplicate content.
-- **`cold-snapshot`** (`fresh` — reboot/first open) — replay the persisted `scrollback-store`
-  snapshot, with a "session restored" separator (the process is genuinely gone).
-- **`warm-history`** (`!fresh` — app restart, tmux still alive) — tmux redraws only the **visible
-  screen**, so everything above it is pulled from tmux's own history via
-  `transport.captureHistory(nodeId)` (`tmux capture-pane`) and written into xterm **with no
-  separator**: this is the session's real history, not a restore boundary. It goes through the
-  **transport** (`LocalTransport` → `pty.captureHistory`; `RemoteTransport` → the host's
-  `pty.captureHistory` RPC over the relay), because a relay node's tmux session lives on the
-  **host** — calling the local `PtyManager` would return `''` and the node would come up blank.
+- **`cold-snapshot`** (`fresh` — reboot/first open) — the tmux session is genuinely gone, so replay
+  the persisted `scrollback-store` snapshot, with a "session restored" separator.
+- **`warm-attach`** (`!fresh` — app restart, tmux still alive) — **seed nothing.** tmux is attached
+  to this client: it redraws the visible screen and owns the history under the wheel. This is where
+  a `warm-history` hydration (`transport.captureHistory` → `tmux capture-pane`) used to run; it was
+  **removed**, because writing into a buffer that tmux then repaints is what produced the black
+  bands and duplicated screens. The single exception is a **co-attach joiner** (`seedPaint` →
+  `create-screen`): tmux only repaints on SIGWINCH, so a joiner that did not resize never gets a
+  redraw, and the screen captured server-side inside `create()` (`PtyCreateResult.screen`) is the
+  only thing that paints it — see docs/team-presence.md.
+
+xterm's own `scrollback` (`xtermScrollback(settings.tmuxScrollback)`, floored at 1000, capped at
+`XTERM_SCROLLBACK_MAX` = 10000) is kept for the sessions tmux does *not* back (a plain shell when
+tmux is unavailable) and for the cold-snapshot replay — it is not what the user scrolls in a tmux
+session.
 
 ## Terminal node lifecycle (gotchas)
 
@@ -252,17 +262,19 @@ mounted xterm is empty, so on attach exactly one of:
   `settings.panHoverDelay` (default 600 ms) before the terminal takes focus — before that,
   drag = move node, scroll = pan canvas. **Cmd/Ctrl+M** (while hovered) toggles a markdown
   render of the captured output. Tag chips via `NodeTags`.
-  **Selection + copy** is the emulator's (tmux's mouse is off): drag to select, wheel to scroll
-  xterm's scrollback. Copy chords (`copyKeyAction`/`isCopyShortcut`): **Cmd+C** (mac),
-  **Ctrl+Shift+C** and **Ctrl+Insert** (Linux/Windows) — matched on `e.key` *or* the physical
-  `KeyC`, so non-Latin layouts still copy. A copy chord is **always swallowed**, selection or not:
-  letting Ctrl+Shift+C fall through would reach the pty as `\x03` (SIGINT). Ctrl+Insert exists
-  because Chromium reserves Ctrl+Shift+C for the inspector and a page cannot `preventDefault()` it
-  — which is where Server Edition users land. Plain **Ctrl+C** is never intercepted. Inside an app
-  that requests mouse tracking (vim, htop) the drag belongs to the app: hold **Option** (mac —
-  xterm's `macOptionClickForcesSelection`) or **Shift** (Linux/Windows) while dragging to bypass it
-  and select in xterm instead. `OSC 52` writes (vim `"+y`, gh, yazi) still reach the
-  clipboard via the terminal's own OSC handler (write-only — a read query is refused).
+  **Selection + copy is tmux's** (its mouse is on — see the tmux section): drag to select, wheel to
+  scroll tmux's history. A drag copies via copy-mode, and tmux emits **OSC 52** to the client, whose
+  handler writes the **system clipboard** — the one copy path on every platform *and* over SSH (no
+  `pbcopy`). OSC 52 writes an app emits itself (vim `"+y`, gh, yazi) reach the clipboard through the
+  same handler (write-only — a read query is refused). The emulator's own copy chords stay for a
+  selection xterm *does* own (`copyKeyAction`/`isCopyShortcut`): **Cmd+C** (mac), **Ctrl+Shift+C**
+  and **Ctrl+Insert** (Linux/Windows) — matched on `e.key` *or* the physical `KeyC`, so non-Latin
+  layouts still copy. A copy chord is **always swallowed**, selection or not: letting Ctrl+Shift+C
+  fall through would reach the pty as `\x03` (SIGINT). Ctrl+Insert exists because Chromium reserves
+  Ctrl+Shift+C for the inspector and a page cannot `preventDefault()` it — which is where Server
+  Edition users land. Plain **Ctrl+C** is never intercepted. To select in **xterm** instead of tmux
+  (or inside an app that grabs the mouse, like vim/htop), hold **Option** (mac —
+  xterm's `macOptionClickForcesSelection`) or **Shift** (Linux/Windows) while dragging.
 - **Agent** (`createAgentNode(agentId, …)`) — a terminal preset that runs an agent CLI as its
   `initialCommand` (runs once on open via `transport.write`, then cleared), with `data.agentId`
   set. Builtins (`claude`/`codex`/`gemini`) come from `AGENT_CONFIG` (clay color etc.).
