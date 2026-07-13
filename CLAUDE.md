@@ -184,8 +184,15 @@ Lifecycle, by intent:
   carry over; do NOT "optimize" this into a respawn+redraw — a fresh xterm on a reused client
   misses the attach-time mode sequences and breaks scrolling). The park timer then runs the real
   teardown: `kill()` detaches the PTY client; the tmux session keeps running. WebGL contexts are
-  released on park / reacquired on adopt (browsers cap ~16 live contexts). Permanent-delete paths
-  call `disposeTerminalOnUnmount(id)` so a deleted node disposes instead of parking.
+  **viewport-scoped** (browsers cap ~16 live contexts, and a canvas holds far more terminals): an
+  `IntersectionObserver` per terminal acquires the GPU addon when the node is visible (`rootMargin`
+  acquires just before it fully enters) and releases it a short delay after it leaves
+  (`WEBGL_RELEASE_DELAY_MS`, so a pan sweeping across nodes doesn't churn contexts). If the browser
+  evicts a context anyway, `onContextLoss` disposes → DOM-renderer fallback and does NOT
+  self-re-acquire (two >16-visible terminals would evict each other forever); re-acquisition waits
+  for the next visibility transition. A parked terminal is off-screen so it holds no context.
+  Permanent-delete paths call `disposeTerminalOnUnmount(id)` so a deleted node disposes instead of
+  parking.
 - **Window close / app quit** → clients detach (`PtyManager.killAll()`); the tmux session keeps
   running. `killAll()` deliberately does NOT kill sessions.
 - **Node reopen / app relaunch** (nothing parked) → a new PTY attaches to the same
