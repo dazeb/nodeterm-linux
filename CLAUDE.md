@@ -406,6 +406,15 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   `~/.gemini/settings.json` (shared `install-helper.ts`, merged/idempotent, preserving other
   tools' hooks); codex → `~/.codex/hooks.json` + `~/.codex/config.toml` trust entries
   (`codex-trust.ts` — the hash gates whether codex runs the hook).
+- **Fullscreen TUI (Claude)** — through the SAME `settings.json` seam the hook installer uses,
+  nodeterm ensures Claude's `"tui": "fullscreen"` so a session takes the alternate screen + mouse
+  and behaves natively in tmux (else a drag falls into copy-mode). Two guardrails: **write-if-absent**
+  (any existing `tui` value — e.g. a user's `/tui default` — is never touched;
+  `core/agents/hooks/claude-tui.ts` `ensureFullscreenTui`) and **version-gated** to CLI ≥ 2.1.89
+  (`supportsFullscreenTui` / `claudeCliCaps().fullscreenTui`; unknown ⇒ don't write). Runs
+  everywhere the hook seam does: local `~/.claude` + managed account dirs at launch/add-account
+  (`ensureClaudeFullscreenTui{,Into}`), and the remote host + account dirs on SSH connect
+  (`RemoteHooks.ensureFullscreenTui{,InAccountDir}`, gated on the connection's cached remote probe).
 - **Unread + notification** — on a busy→idle edge while the window is unfocused
   (`document.hasFocus()`), the node is marked unread (header dot, minimap stroke, project-tab
   dot). If notifications are enabled, `window.nodeTerminal.notify()` → main `app:notify`
