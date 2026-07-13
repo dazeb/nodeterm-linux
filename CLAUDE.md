@@ -184,15 +184,26 @@ Lifecycle, by intent:
   carry over; do NOT "optimize" this into a respawn+redraw — a fresh xterm on a reused client
   misses the attach-time mode sequences and breaks scrolling). The park timer then runs the real
   teardown: `kill()` detaches the PTY client; the tmux session keeps running. WebGL contexts are
-  **viewport-scoped** (browsers cap ~16 live contexts, and a canvas holds far more terminals): an
-  `IntersectionObserver` per terminal acquires the GPU addon when the node is visible (`rootMargin`
-  acquires just before it fully enters) and releases it a short delay after it leaves
-  (`WEBGL_RELEASE_DELAY_MS`, so a pan sweeping across nodes doesn't churn contexts). If the browser
-  evicts a context anyway, `onContextLoss` disposes → DOM-renderer fallback and does NOT
-  self-re-acquire (two >16-visible terminals would evict each other forever); re-acquisition waits
-  for the next visibility transition. A parked terminal is off-screen so it holds no context.
-  Permanent-delete paths call `disposeTerminalOnUnmount(id)` so a deleted node disposes instead of
-  parking.
+  **viewport-scoped and budgeted** (browsers cap ~16 live contexts, and a canvas holds far more
+  terminals). A per-terminal `IntersectionObserver` (`rootMargin` pre-announces approach) only
+  REPORTS visibility to a **module-level budget coordinator** (`terminal/webgl-budget.ts`) that owns
+  every grant decision and all timing: it keeps the contexts WE hold at/under `WEBGL_BUDGET` (12) so
+  the browser never has to **force-evict** — which is the bug that flashed Chromium's dead
+  "lost context" placeholder (white box + sad-face) on a visible terminal during a fast pan / zoom
+  out, because the old per-node observers each acquired independently and momentarily overshot the
+  cap. Rules: a client granted only after an **acquire debounce** (`WEBGL_ACQUIRE_DEBOUNCE_MS`, so a
+  pan-through never grabs a context for a two-frame flash); if granting would exceed the budget,
+  **reclaim on demand from the least-recently-visible HIDDEN holder** (bypassing its release delay);
+  if every holder is currently visible (zoomed way out), the newcomer is NOT granted and **stays on
+  the DOM renderer** — we never push past the budget. A hidden holder keeps its context for
+  `WEBGL_RELEASE_DELAY_MS` (warm for a pan-back) but is the first reclaim candidate. `acquire()`
+  returning false (WebGL2 unavailable) doesn't burn a slot; an externally-lost context
+  (`onContextLoss`) is reported via `handle.contextLost()` and just drops from the accounting (NO
+  self-re-acquire — two terminals fighting the cap would evict each other forever; the next
+  visibility transition / reclaim decides). The node registers via `registerWebglClient` on mount
+  and `handle.dispose()`s on unmount (which releases + cancels timers). A parked terminal is
+  off-screen so it holds no context. Permanent-delete paths call `disposeTerminalOnUnmount(id)` so a
+  deleted node disposes instead of parking.
 - **Window close / app quit** → clients detach (`PtyManager.killAll()`); the tmux session keeps
   running. `killAll()` deliberately does NOT kill sessions.
 - **Node reopen / app relaunch** (nothing parked) → a new PTY attaches to the same
