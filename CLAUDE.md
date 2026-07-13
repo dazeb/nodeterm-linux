@@ -404,7 +404,16 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   **remote** host's CLI, never the local one: `SshProjectManager.connect` probes `claude --version`
   on the host (through a login shell — an ssh exec channel's rc file usually bails out early) and
   caches the answer on the connection → `useSshConn`; not connected / not yet probed ⇒ no `auto`
-  flag. The cold-restore relaunch `await`s the (shell-warmed) probe because it fires on mount.
+  flag. A FAILED remote probe (claude not found — often a transient login-shell hiccup) **retries
+  on a bounded backoff** (`PROBE_RETRY_DELAYS_MS`; every attempt pushes its answer immediately so
+  launch waiters never block on the retry tail; a definite version — old or new — never retries),
+  and the status event carries `remoteClaudeVersion` (`null` = probe failed) beside the boolean.
+  The cold-restore relaunch `await`s the (shell-warmed) local probe because it fires on mount —
+  and on an SSH project whose resolved mode is `auto` it also waits (`SSH_AUTO_PROBE_WAIT_MS`,
+  bounded, fail-open) for the REMOTE probe's first answer, which races the same mount. Because
+  the degrade is silent by design, the tab menu's Auto rows surface it: `sshAutoModeHint`
+  (tri-state `useSshConn.autoPermAnswer` + probed version) puts a ⚠︎ + tooltip on "Auto" / "Use
+  global (Auto)" for an SSH project whose remote CLI is too old / missing / not yet probed.
   **Security:** mode values come from hand-editable, git-shared JSON and end up interpolated into
   a shell command line (tmux `send-keys`), so `permissionModeFlag` **re-validates** the mode at the
   interpolation site (the type is compile-time only) — an unrecognized mode yields **no flag**, i.e.
@@ -574,7 +583,12 @@ persisted — only `unread`/`session`/`sessionId` go to localStorage under
   - **Pickers** — New Claude / New Chat expose an account **submenu** (pane menu; flat entries in
     the dock; palette commands; TabBar sets the **per-project default**). A **local** project
     lists local accounts, an **SSH** project lists only accounts whose `host` matches its
-    connection; both offer a **System account** option.
+    connection; both offer a **System account** option. An SSH project whose host has **no**
+    matching accounts gets a disabled hint row instead of a bare System-only list
+    (`sshAccountsHint` — pane submenu, dock, TabBar; the palette deliberately omits it: a
+    disabled row would surface as a search result) saying accounts for this host are added in
+    Settings → Accounts while the project is connected — local accounts being invisible there is
+    correct (their credentials aren't on the host) but read as "multi-account is broken on SSH".
   - **Remote accounts (v1 scope)** — selection + login + env injection only; **no usage**, no
     per-account transcript readers beyond env.
 
