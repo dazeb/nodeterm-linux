@@ -1,6 +1,6 @@
 {
   "name": "node-terminal",
-  "version": "0.2.9",
+  "version": "0.3.0",
   "description": "nodeterm Linux port — node-based terminal manager on an infinite canvas, ported from macOS to Linux.",
   "author": {
     "name": "dazeb",
@@ -31,8 +31,8 @@
     "postinstall": "electron-rebuild -f -w node-pty"
   },
   "build": {
-    "appId": "com.nodeterm.app",
-    "productName": "nodeterm",
+    "appId": "com.nodeterm-linux.app",
+    "productName": "nodeterm-linux",
     "directories": {
       "output": "dist",
       "buildResources": "build"
