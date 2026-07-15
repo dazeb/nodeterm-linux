@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { hintLabel, modSymbol } from '../../shared/platform-utils'
 
 interface ShortcutsPanelProps {
   onClose: () => void
@@ -10,28 +11,30 @@ interface Row {
   label: string
 }
 
+const MOD = modSymbol()
+
 const SECTIONS: { title: string; rows: Row[] }[] = [
   {
     title: 'General',
     rows: [
-      { keys: ['⌘', 'K'], label: 'Command palette' },
-      { keys: ['⌘', ','], label: 'Settings' },
-      { keys: ['⌘', '/'], label: 'This shortcuts panel' },
-      { keys: ['⌘', 'Z'], label: 'Undo' },
-      { keys: ['⌘', '⇧', 'Z'], label: 'Redo' }
+      { keys: [MOD, 'K'], label: 'Command palette' },
+      { keys: [MOD, ','], label: 'Settings' },
+      { keys: [MOD, '/'], label: 'This shortcuts panel' },
+      { keys: [MOD, 'Z'], label: 'Undo' },
+      { keys: [MOD, '⇧', 'Z'], label: 'Redo' }
     ]
   },
   {
     title: 'Canvas',
     rows: [
-      { keys: ['⌘', 'T'], label: 'New terminal' },
-      { keys: ['⌘', '⇧', 'C'], label: 'New Claude Code' },
-      { keys: ['⌘', 'W'], label: 'Close selected node' },
+      { keys: [MOD, 'T'], label: 'New terminal' },
+      { keys: [MOD, '⇧', 'C'], label: 'New Claude Code' },
+      { keys: [MOD, 'W'], label: 'Close selected node' },
       { keys: ['Right-click'], label: 'Actions menu (empty space or node)' },
       { keys: ['Left-drag'], label: 'Box-select (touch to select)' },
       { keys: ['Middle / Right-drag'], label: 'Pan the canvas' },
       { keys: ['Double-click'], label: 'Center & focus a node' },
-      { keys: ['⌘', 'wheel'], label: 'Zoom in / out' }
+      { keys: [MOD, 'wheel'], label: 'Zoom in / out' }
     ]
   },
   {
@@ -39,16 +42,16 @@ const SECTIONS: { title: string; rows: Row[] }[] = [
     rows: [
       { keys: ['Hover ~0.6s'], label: 'Enter the terminal (type/select)' },
       { keys: ['Quick drag'], label: 'Move the terminal (before it focuses)' },
-      { keys: ['⌘', 'M'], label: 'Toggle markdown view' },
-      { keys: ['⌘', 'C'], label: 'Copy selection (markdown view)' },
+      { keys: [MOD, 'M'], label: 'Toggle markdown view' },
+      { keys: [MOD, 'C'], label: 'Copy selection (markdown view)' },
       { keys: ['✦'], label: 'Name the terminal with AI' }
     ]
   },
   {
     title: 'Source Control',
     rows: [
-      { keys: ['⌘', '⇧', 'G'], label: 'Open Source Control' },
-      { keys: ['⌘', '↵'], label: 'Commit the staged changes' }
+      { keys: [MOD, '⇧', 'G'], label: 'Open Source Control' },
+      { keys: [MOD, '↵'], label: 'Commit the staged changes' }
     ]
   }
 ]

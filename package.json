@@ -1,8 +1,9 @@
 {
   "name": "node-terminal",
   "version": "0.2.9",
-  "description": "node-based terminal manager — multiple draggable, zoomable terminals on a single canvas.",
-  "author": "enes",
+  "description": "nodeterm Linux port — node-based terminal manager on an infinite canvas, ported from macOS to Linux.",
+  "author": "dazeb",
+  "homepage": "https://github.com/dazeb/nodeterm-linux",
   "license": "BUSL-1.1",
   "private": true,
   "main": "./out/main/index.js",
@@ -21,7 +22,9 @@
     "make-icon": "node scripts/make-icon.mjs",
     "make-social": "node scripts/make-social.mjs",
     "dist": "npm run make-icon && electron-vite build && electron-builder --mac --arm64 -c.mac.identity=null -c.mac.notarize=false",
+    "dist:linux": "npm run make-icon && electron-vite build && electron-builder --linux",
     "release": "npm run make-icon && electron-vite build && sh -c 'electron-builder --mac --arm64 --x64 --publish never; s=$?; npm run rebuild; exit $s'",
+    "release:linux": "npm run make-icon && electron-vite build && electron-builder --linux --publish never",
     "postinstall": "electron-rebuild -f -w node-pty"
   },
   "build": {
@@ -62,6 +65,24 @@
           ]
         }
       ]
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Development",
+      "icon": "build/icon.png"
     },
     "publish": {
       "provider": "generic",

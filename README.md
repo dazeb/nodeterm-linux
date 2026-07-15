@@ -10,7 +10,7 @@ Multiple real terminals live as draggable nodes on a single pan/zoom canvas.
 Built for people with ADHD and scattered workflows: a spatial layout instead of
 a stack of hidden tabs.
 
-[![Platform](https://img.shields.io/badge/platform-macOS%20(arm64%20%2B%20x64)-black)](https://nodeterm.dev)
+[![Platform](https://img.shields.io/badge/platform-macOS%20(arm64%20%2B%20x64)%20%E2%80%A2%20Linux%20(x64)-black)](https://github.com/dazeb/nodeterm-linux)
 [![Built with Electron](https://img.shields.io/badge/built%20with-Electron-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](./LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/eneskirca/nodeterm?style=flat)](https://github.com/eneskirca/nodeterm/stargazers)
@@ -34,7 +34,7 @@ Stacked terminal tabs hide context — you lose track of what's running where. n
 turns that into a **map**: every shell is a node you can place, group, label, and zoom
 into. Sessions are spatial and persistent, so your mental model stays intact across
 restarts. And because the app is built around a clean service seam, the same canvas now
-runs three ways — as the **macOS desktop app**, as a **self-hosted browser app** you
+runs three ways — as the **macOS desktop app**, as a **Linux desktop app**, as a **self-hosted browser app** you
 reach from anywhere (Server Edition), and (in progress) a **mobile companion**.
 
 ## ✨ Features
@@ -92,15 +92,18 @@ limitations.
 
 ## 📦 Download
 
-Grab the latest `.dmg` from **[nodeterm.dev](https://nodeterm.dev)** (Apple Silicon and
+**macOS:** Grab the latest `.dmg` from **[nodeterm.dev](https://nodeterm.dev)** (Apple Silicon and
 Intel builds). The app auto-updates itself from there.
 
-> Until the build is signed & notarized, macOS Gatekeeper may warn on first launch —
+**Linux:** Download the latest `.AppImage` or `.deb` from the
+**[GitHub releases](https://github.com/dazeb/nodeterm-linux/releases)** page.
+
+> Until the macOS build is signed & notarized, macOS Gatekeeper may warn on first launch —
 > right-click the app → **Open** to bypass it once.
 
 ## 🛠 Build from source
 
-Requires Node.js 20+ and macOS.
+Requires Node.js 20+.
 
 ```bash
 npm install        # deps + rebuilds node-pty against Electron's ABI (postinstall)
@@ -109,25 +112,26 @@ npm run build      # production build into out/
 npm start          # preview the production build
 npm run typecheck  # fastest correctness gate
 npm test           # vitest unit + integration suite
-npm run dist       # local UNSIGNED .dmg into dist/ (smoke test)
+npm run dist       # local UNSIGNED .dmg into dist/ (macOS smoke test)
+npm run dist:linux # local AppImage + .deb into dist/ (Linux build)
 npm run server:dev # build + run the browser Server Edition (needs Node 22 + tmux)
 ```
 
-`npm run dist` builds an unsigned `.dmg` for local testing; `npm run server:dev` runs the
-headless browser edition.
+`npm run dist` builds an unsigned `.dmg` for local testing on macOS; `npm run dist:linux` builds
+an AppImage and `.deb` for Linux. `npm run server:dev` runs the headless browser edition.
 
 ## ⌨️ Keyboard shortcuts
 
-| Shortcut | Action |
-| --- | --- |
-| `⌘K` | Command palette |
-| `⌘T` / `⌘⇧C` | New terminal / New Claude Code |
-| `⌘W` | Close the selected node |
-| `⌘Z` / `⌘⇧Z` | Undo / Redo |
-| `⌘M` | Toggle markdown view (terminal / editor) |
-| `⌘⇧E` | File explorer |
-| `⌘,` | Settings · `⌘/` Shortcuts |
-| `Right-click` | Actions menu (empty space or node) |
+| Shortcut (macOS) | Shortcut (Linux) | Action |
+| --- | --- | --- |
+| `⌘K` | `Ctrl+K` | Command palette |
+| `⌘T` / `⌘⇧C` | `Ctrl+T` / `Ctrl+⇧C` | New terminal / New Claude Code |
+| `⌘W` | `Ctrl+W` | Close the selected node |
+| `⌘Z` / `⌘⇧Z` | `Ctrl+Z` / `Ctrl+⇧Z` | Undo / Redo |
+| `⌘M` | `Ctrl+M` | Toggle markdown view (terminal / editor) |
+| `⌘⇧E` | `Ctrl+⇧E` | File explorer |
+| `⌘,` / `⌘/` | `Ctrl+,` / `Ctrl+/` | Settings / Shortcuts |
+| `Right-click` | `Right-click` | Actions menu (empty space or node) |
 
 ## 🏗 Architecture
 
