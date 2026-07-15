@@ -2,19 +2,19 @@
 
 <img src="docs/assets/nodeterm.png" alt="nodeterm" width="120" height="120" />
 
-# nodeterm
+# nodeterm-linux
 
-**A node-based terminal manager — your terminals on an infinite canvas.**
+**A node-based terminal manager for Linux — your terminals on an infinite canvas.**
 
 Multiple real terminals live as draggable nodes on a single pan/zoom canvas.
 Built for people with ADHD and scattered workflows: a spatial layout instead of
 a stack of hidden tabs.
 
-[![Platform](https://img.shields.io/badge/platform-macOS%20(arm64%20%2B%20x64)%20%E2%80%A2%20Linux%20(x64)-black)](https://github.com/dazeb/nodeterm-linux)
+[![Platform](https://img.shields.io/badge/platform-Linux%20(x64)-black)]()
 [![Built with Electron](https://img.shields.io/badge/built%20with-Electron-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](./LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/eneskirca/nodeterm?style=flat)](https://github.com/eneskirca/nodeterm/stargazers)
-[![Latest release](https://img.shields.io/github/v/release/eneskirca/nodeterm?include_prereleases&sort=semver)](https://github.com/eneskirca/nodeterm/releases)
+[![GitHub stars](https://img.shields.io/github/stars/dazeb/nodeterm-linux?style=flat)](https://github.com/dazeb/nodeterm-linux)
+[![Latest release](https://img.shields.io/github/v/release/dazeb/nodeterm-linux?include_prereleases&sort=semver)](https://github.com/dazeb/nodeterm-linux/releases)
 
 [Download](#-download) · [Features](#-features) · [Build from source](#-build-from-source) · [Architecture](#-architecture) · [License](#-license)
 
@@ -28,14 +28,16 @@ a stack of hidden tabs.
   <sub><i>Illustration of the canvas — swap in a real screenshot/GIF when ready.</i></sub>
 </div>
 
-## Why nodeterm
+## Why nodeterm-linux
 
-Stacked terminal tabs hide context — you lose track of what's running where. nodeterm
-turns that into a **map**: every shell is a node you can place, group, label, and zoom
-into. Sessions are spatial and persistent, so your mental model stays intact across
-restarts. And because the app is built around a clean service seam, the same canvas now
-runs three ways — as the **macOS desktop app**, as a **Linux desktop app**, as a **self-hosted browser app** you
-reach from anywhere (Server Edition), and (in progress) a **mobile companion**.
+This is a **Linux desktop port** of [nodeterm](https://github.com/eneskirca/nodeterm), originally built for macOS. The core codebase is the same — the architecture was designed with a clean platform seam (`CorePlatform`) that made the port straightforward. All features work on Linux with no subscription gating.
+
+Stacked terminal tabs hide context — you lose track of what's running where. nodeterm turns that into a **map**: every shell is a node you can place, group, label, and zoom into. Sessions are spatial and persistent, so your mental model stays intact across restarts.
+
+**What's different in this fork:**
+- All Pro/subscription features are free — no license keys, no paywalls
+- Linux desktop builds (AppImage + .deb)
+- Keyboard shortcuts use Ctrl instead of ⌘
 
 ## ✨ Features
 
@@ -53,7 +55,7 @@ reach from anywhere (Server Edition), and (in progress) a **mobile companion**.
     image paste, cost meter) — not a PTY.
   - 📝 **Sticky note** — free-text colored notes; link one to an agent to feed it context.
   - 🗂 **Group** — frame and move related nodes together.
-  - ✏️ **Editor** — Monaco code editor for a file (⌘S to save, markdown/image preview).
+  - ✏️ **Editor** — Monaco code editor for a file (Ctrl+S to save, markdown/image preview).
   - 🔀 **Diff** — Monaco diff editor for staged/unstaged changes.
   - 🌐 **Web / Video** — render a page or a video right on the canvas.
 - **Live agent status** — hook-driven **RUNNING / NEEDS YOU** badges, **subagent** cards
@@ -69,14 +71,16 @@ reach from anywhere (Server Edition), and (in progress) a **mobile companion**.
   system `git`.
 - **AI commit messages & terminal names** — bring-your-own local agent CLI
   (claude / codex / custom) run read-only on the staged diff or captured output.
-- **Command palette** (⌘K), **file explorer** (⌘⇧E), **markdown view** (⌘M),
-  **undo/redo** (⌘Z / ⌘⇧Z), and a native macOS dark UI.
-- **Auto-update & in-app announcements** — the app checks a self-hosted feed and
+- **Command palette** (Ctrl+K), **file explorer** (Ctrl+⇧E), **markdown view** (Ctrl+M),
+  **undo/redo** (Ctrl+Z / Ctrl+⇧Z), and a native dark UI.
+- **Auto-update & in-app announcements** — the app checks an update feed and
   surfaces a "Restart to update" banner and product news.
+- **Remote access (free)** — host your terminals over the relay, connect from another
+  machine or phone. End-to-end encrypted, no subscription required.
 
 ### 🌍 Server Edition — nodeterm in your browser
 
-The same canvas runs headless on a Linux (or macOS) host and is used from any browser —
+The same canvas runs headless on a Linux host and is used from any browser —
 so your terminals, editors, source control, and agents live on a server you reach from
 anywhere. Single-user auth (password + secure cookie), a WebSocket bridge, and the exact
 same renderer as the desktop app.
@@ -92,18 +96,12 @@ limitations.
 
 ## 📦 Download
 
-**macOS:** Grab the latest `.dmg` from **[nodeterm.dev](https://nodeterm.dev)** (Apple Silicon and
-Intel builds). The app auto-updates itself from there.
-
-**Linux:** Download the latest `.AppImage` or `.deb` from the
+Download the latest `.AppImage` or `.deb` from the
 **[GitHub releases](https://github.com/dazeb/nodeterm-linux/releases)** page.
-
-> Until the macOS build is signed & notarized, macOS Gatekeeper may warn on first launch —
-> right-click the app → **Open** to bypass it once.
 
 ## 🛠 Build from source
 
-Requires Node.js 20+.
+Requires Node.js 20+ and tmux.
 
 ```bash
 npm install        # deps + rebuilds node-pty against Electron's ABI (postinstall)
@@ -112,26 +110,24 @@ npm run build      # production build into out/
 npm start          # preview the production build
 npm run typecheck  # fastest correctness gate
 npm test           # vitest unit + integration suite
-npm run dist       # local UNSIGNED .dmg into dist/ (macOS smoke test)
-npm run dist:linux # local AppImage + .deb into dist/ (Linux build)
-npm run server:dev # build + run the browser Server Edition (needs Node 22 + tmux)
+npm run dist:linux # local AppImage + .deb into dist/
+npm run server:dev # build + run the browser Server Edition (needs Node 22+)
 ```
 
-`npm run dist` builds an unsigned `.dmg` for local testing on macOS; `npm run dist:linux` builds
-an AppImage and `.deb` for Linux. `npm run server:dev` runs the headless browser edition.
+`npm run dist:linux` builds an AppImage and `.deb` into `dist/`. `npm run server:dev` runs the headless browser edition.
 
 ## ⌨️ Keyboard shortcuts
 
-| Shortcut (macOS) | Shortcut (Linux) | Action |
-| --- | --- | --- |
-| `⌘K` | `Ctrl+K` | Command palette |
-| `⌘T` / `⌘⇧C` | `Ctrl+T` / `Ctrl+⇧C` | New terminal / New Claude Code |
-| `⌘W` | `Ctrl+W` | Close the selected node |
-| `⌘Z` / `⌘⇧Z` | `Ctrl+Z` / `Ctrl+⇧Z` | Undo / Redo |
-| `⌘M` | `Ctrl+M` | Toggle markdown view (terminal / editor) |
-| `⌘⇧E` | `Ctrl+⇧E` | File explorer |
-| `⌘,` / `⌘/` | `Ctrl+,` / `Ctrl+/` | Settings / Shortcuts |
-| `Right-click` | `Right-click` | Actions menu (empty space or node) |
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+K` | Command palette |
+| `Ctrl+T` / `Ctrl+⇧C` | New terminal / New Claude Code |
+| `Ctrl+W` | Close the selected node |
+| `Ctrl+Z` / `Ctrl+⇧Z` | Undo / Redo |
+| `Ctrl+M` | Toggle markdown view (terminal / editor) |
+| `Ctrl+⇧E` | File explorer |
+| `Ctrl+,` / `Ctrl+/` | Settings / Shortcuts |
+| `Right-click` | Actions menu (empty space or node) |
 
 ## 🏗 Architecture
 
@@ -156,6 +152,10 @@ See [`CLAUDE.md`](./CLAUDE.md) for the full design notes and gotchas, and
 
 ## 🤝 Contributing
 
+This is a Linux port maintained by [dazeb](https://github.com/dazeb). The upstream
+codebase by [eneskirca](https://github.com/eneskirca) is at
+[github.com/eneskirca/nodeterm](https://github.com/eneskirca/nodeterm).
+
 Issues and pull requests are welcome. nodeterm is licensed under the
 [Business Source License 1.1](https://mariadb.com/bsl11/) — you can use, modify,
 and redistribute it freely, including in production, except offering it as a
@@ -175,7 +175,7 @@ standalone product/service) in a way that **competes** with nodeterm or with the
 Licensor's products built on it. Each release automatically becomes plain **MIT** four
 years after it is published. See [`LICENSE`](./LICENSE) for the full terms and
 [`THIRD-PARTY-NOTICES.md`](./THIRD-PARTY-NOTICES.md) for the bundled open-source
-components. For a commercial license beyond the grant, contact eneskirca@gmail.com.
+components.
 
 > "Claude" and "Claude Code" are trademarks of Anthropic; nodeterm is not affiliated with
 > or endorsed by Anthropic.
