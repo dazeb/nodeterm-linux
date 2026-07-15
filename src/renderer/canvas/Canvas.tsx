@@ -42,7 +42,9 @@ import {
   IconBranch,
   IconDuplicate,
   IconEditor,
+  IconExplorer,
   IconFit,
+  IconGear,
   IconGrid,
   IconGroup,
   IconChat,
@@ -154,7 +156,7 @@ import {
   reconnectRelayTab,
   type RelayTab,
 } from '../session/relay-tab'
-import { buildBackgroundLinkMaps, buildContextLinkNote, buildLinkMap, buildNotePushMessage, classifyLink, type LinkEndpoint } from '../lib/noteLink'
+import { buildBackgroundLinkMaps, buildCanvasControlNote, buildContextLinkNote, buildLinkMap, buildNotePushMessage, classifyLink, shouldPushControlNote, type LinkEndpoint } from '../lib/noteLink'
 import { useSettings } from '../state/settings'
 import { activePermissionMode } from '../state/permissionMode'
 import { useContextWindow } from '../state/contextWindow'
@@ -4835,6 +4837,20 @@ export function Canvas() {
             // the turn didn't complete, so it isn't a loop iteration either.
             cs.bumpLoop(e.nodeId, e.lastMessage) // count loop iterations + summary (no-op if not looping)
             alert('finished', `${agentLabel} finished its turn.`)
+            // First completed turn of a controllable session → one-shot discovery note.
+            // Idle now, so the sendText (which submits) can't interrupt a turn; keyed by
+            // sessionId so a resume never repeats it. See buildCanvasControlNote.
+            const st = cs.byId[e.nodeId]
+            if (
+              shouldPushControlNote({
+                sessionId: st?.sessionId,
+                controlNoted: st?.controlNoted,
+                canControl: canControlCanvas(e.agentId)
+              })
+            ) {
+              cs.setControlNoted(e.nodeId, st!.sessionId!)
+              void api.pty.sendText(e.nodeId, buildCanvasControlNote(e.agentId))
+            }
           }
           if (e.state === 'blocked') alert('needs input', `${agentLabel} needs permission to continue.`)
           else if (e.state === 'waiting') alert('needs input', `${agentLabel} is waiting for your response.`)
@@ -5536,7 +5552,7 @@ export function Canvas() {
           <span className="kbd">⌘K</span>
         </button>
         <button title="Explorer (⌘⇧E)" onClick={() => setExplorerOpen(true)}>
-          🗂
+          <IconExplorer />
         </button>
         <button title="Source Control (⌘⇧G)" onClick={() => setScOpen(true)}>
           <IconBranch />
@@ -5548,7 +5564,7 @@ export function Canvas() {
             setSettingsOpen(true)
           }}
         >
-          ⚙
+          <IconGear />
         </button>
         <button
           title="Help"
@@ -5561,6 +5577,10 @@ export function Canvas() {
               items: [
                 { label: 'Keyboard shortcuts', hint: '⌘/', onClick: () => setShortcutsOpen(true) },
                 { label: 'Report a bug…', onClick: () => setBugReportOpen(true) },
+                {
+                  label: 'Documentation',
+                  onClick: () => window.nodeTerminal.shell.openExternal(`${REPO_URL}#readme`)
+                },
                 {
                   label: 'GitHub repository',
                   onClick: () => window.nodeTerminal.shell.openExternal(REPO_URL)
@@ -5579,6 +5599,18 @@ export function Canvas() {
       </div>
 
       <div className="flow-wrap" ref={flowWrapRef}>
+        {/* First-contact guidance: an empty canvas used to be a black void (field report:
+            "didn't know what to do first"). Pointer-events-none so it can never eat a
+            right-click or box-select; keyed off the LIVE nodes array, so it reappears on
+            any emptied project, not just first run (no persisted seen-flag — YAGNI). */}
+        {nodes.length === 0 && (
+          <div className="empty-canvas-hint" aria-hidden>
+            <div>Right-click to add a terminal or agent</div>
+            <div>
+              <span className="kbd">⌘K</span> command palette · <span className="kbd">+</span> in the dock below
+            </div>
+          </div>
+        )}
         {/* The active project's node subtree runs under ITS session (local for a local tab, the
             relay session for a remote tab). Keyed by session id so an api swap REMOUNTS the nodes
             (obligation 3): TerminalNode/EditorNode/ChatNode capture `api` in []-effects, so a live
