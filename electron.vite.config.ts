@@ -14,7 +14,13 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/main/index.ts') }
+        input: { index: resolve(__dirname, 'src/main/index.ts') },
+        output: {
+          // Force CJS output (.js) — electron-vite v5 defaults to ESM (.mjs), but asar-packaged
+          // Electron apps need CJS for the main process entry point to work inside the archive.
+          format: 'cjs',
+          entryFileNames: '[name].js'
+        }
       }
     }
   },
@@ -27,7 +33,12 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/preload/index.ts') }
+        input: { index: resolve(__dirname, 'src/preload/index.ts') },
+        output: {
+          // Same CJS requirement for the preload script inside asar.
+          format: 'cjs',
+          entryFileNames: '[name].js'
+        }
       }
     }
   },

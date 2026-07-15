@@ -9,7 +9,7 @@
   "homepage": "https://github.com/dazeb/nodeterm-linux",
   "license": "BUSL-1.1",
   "private": true,
-  "main": "./out/main/index.mjs",
+  "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
