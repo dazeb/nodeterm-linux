@@ -1,10 +1,10 @@
-// Polls the backend /v1/check feed from the main process (so the renderer CSP stays 'self').
-// Successor to the static announcements.json: returns targeted messages for the announcement
-// banner AND the mandatory-update policy for the Update Card. Persists nothing server-side.
+// Polls a backend /v1/check feed from the main process (so the renderer CSP stays 'self').
+// For this fork, the default returns empty since there is no fork-specific announcement/update-policy
+// server. Set NODETERM_API_BASE to a custom endpoint to host your own announcements feed.
 import { platform } from './platform'
 import type { Announcement, UpdatePolicy } from '../shared/types'
 
-const API_BASE = process.env.NODETERM_API_BASE || 'https://api.nodeterm.dev'
+const API_BASE = process.env.NODETERM_API_BASE || ''
 const CACHE_MS = 5 * 60 * 1000
 
 export interface CheckResult {
@@ -14,10 +14,11 @@ export interface CheckResult {
 
 const EMPTY: CheckResult = { messages: [], update: { minSupported: null, mandatory: false } }
 
-// Same build + DO_NOT_TRACK gate as telemetry: dev never hits the prod API unless a local
-// server is targeted explicitly. Not gated on the telemetry opt-out — this is content delivery
-// (the old announcements feed always ran) and /v1/check stores nothing.
 function allowed(): boolean {
+  // Only check when an explicit API base is configured. Without one, the fork has no
+  // announcement/update-policy server — the upstream's api.nodeterm.dev is specific to
+  // the nodeterm project and does not apply to this fork.
+  if (!API_BASE) return false
   if (process.env.DO_NOT_TRACK || process.env.NODETERM_TELEMETRY_DISABLED) return false
   if (!platform().isPackaged && !process.env.NODETERM_API_BASE) return false
   return true

@@ -13,7 +13,7 @@ type Status =
   | { kind: 'required'; minSupported: string | null }
   | { kind: 'error'; message: string }
 
-const RELEASES_URL = 'https://nodeterm.dev/releases'
+const RELEASES_URL = 'https://github.com/dazeb/nodeterm-linux/releases'
 
 export function UpdateCard(): JSX.Element | null {
   const [status, setStatus] = useState<Status>({ kind: 'idle' })

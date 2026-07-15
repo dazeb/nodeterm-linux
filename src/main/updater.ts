@@ -1,9 +1,10 @@
-// Auto-update client (electron-updater). The packaged app downloads updates automatically
-// and forwards the full lifecycle (available → progress → downloaded → error/not-available)
-// to the renderer's UpdateCard. Version lookup, manual check, and restart work in dev too;
-// the automatic feed checks and event wiring are packaged-only. On macOS, silent self-install
-// requires a signed + notarized build; unsigned builds still surface the card for a manual
-// download.
+// Auto-update client (electron-updater). Uses GitHub Releases to check for and download
+// updates from the dazeb/nodeterm-linux repository. The GitHub provider auto-detects release
+// artifacts by platform: AppImage + deb for Linux, dmg + zip for macOS.
+//
+// The feed URL is configured at runtime so the fork always checks the right repo regardless
+// of the build-time electron-builder publish config. The package.json publish block is kept
+// in sync as a fallback for electron-builder's own build metadata.
 import { app, ipcMain, Notification } from 'electron'
 import electronUpdater from 'electron-updater'
 import { IPC } from '../shared/ipc'
@@ -11,6 +12,10 @@ import { getMainWindow, sendToMain } from './main-window'
 import { retainUntilDismissed } from './notifications'
 
 const { autoUpdater } = electronUpdater
+
+/** GitHub owner/repo for this fork. */
+const GH_OWNER = 'dazeb'
+const GH_REPO = 'nodeterm-linux'
 
 const SIX_HOURS = 6 * 60 * 60 * 1000
 
@@ -43,6 +48,18 @@ export function initUpdater(onBeforeRestart?: () => void): void {
     return
   }
 
+  // Pin the feed URL to the GitHub Releases API for this fork. This means the updater
+  // works even if the build-time electron-builder publish config was targeting a different
+  // server (e.g. the upstream generic provider). The package.json publish block is kept in
+  // sync as a convenience for electron-builder's own metadata embedding, but the runtime
+  // config is authoritative.
+  autoUpdater.setFeedURL({
+    provider: 'github',
+    owner: GH_OWNER,
+    repo: GH_REPO,
+    private: false
+  })
+
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
 
@@ -67,7 +84,7 @@ export function initUpdater(onBeforeRestart?: () => void): void {
     if (!getMainWindow()?.isFocused() && Notification.isSupported()) {
       const n = new Notification({
         title: 'Update ready',
-        body: `nodeterm ${info.version} is ready to install.`
+        body: `nodeterm-linux ${info.version} is ready to install.`
       })
       n.on('click', () => {
         // Resolve again on click — the window may have been closed or recreated since.
