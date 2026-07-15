@@ -2,7 +2,10 @@
   "name": "node-terminal",
   "version": "0.2.9",
   "description": "nodeterm Linux port — node-based terminal manager on an infinite canvas, ported from macOS to Linux.",
-  "author": "dazeb",
+  "author": {
+    "name": "dazeb",
+    "email": "dazeb@users.noreply.github.com"
+  },
   "homepage": "https://github.com/dazeb/nodeterm-linux",
   "license": "BUSL-1.1",
   "private": true,
@@ -82,7 +85,8 @@
         }
       ],
       "category": "Development",
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "maintainer": "dazeb <dazeb@users.noreply.github.com>"
     },
     "publish": {
       "provider": "generic",
