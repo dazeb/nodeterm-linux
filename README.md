@@ -38,6 +38,7 @@ Stacked terminal tabs hide context — you lose track of what's running where. n
 - All Pro/subscription features are free — no license keys, no paywalls
 - Linux desktop builds (AppImage + .deb)
 - Keyboard shortcuts use Ctrl instead of ⌘
+- Telegram bot integration instead of macOS phone pairing
 
 ## ✨ Features
 
@@ -75,24 +76,31 @@ Stacked terminal tabs hide context — you lose track of what's running where. n
   **undo/redo** (Ctrl+Z / Ctrl+⇧Z), and a native dark UI.
 - **Auto-update & in-app announcements** — the app checks an update feed and
   surfaces a "Restart to update" banner and product news.
-- **Remote access (free)** — host your terminals over the relay, connect from another
-  machine or phone. End-to-end encrypted, no subscription required.
+- **Telegram bot (free)** — control your terminals remotely via Telegram. List
+  sessions, view output, and send commands from your phone. No relay server needed.
+  Set up in Settings → Telegram with a bot token from @BotFather.
 
-### 🌍 Server Edition — nodeterm in your browser
+### 🤖 Telegram Bot — terminals on your phone
 
-The same canvas runs headless on a Linux host and is used from any browser —
-so your terminals, editors, source control, and agents live on a server you reach from
-anywhere. Single-user auth (password + secure cookie), a WebSocket bridge, and the exact
-same renderer as the desktop app.
+Control your terminals from anywhere via Telegram. The bot runs on the same machine as nodeterm and connects directly to your tmux sessions — no relay, no cloud service, no subscription.
 
-```bash
-npm run server:dev     # build + serve; open http://127.0.0.1:8443 and set a password
-```
+**Setup:**
+1. Open nodeterm → Settings → Telegram
+2. Create a bot via [@BotFather](https://t.me/botfather) and copy its API token
+3. Paste the token into nodeterm and click Start
+4. Scan the QR code or tap the link to open the bot on your phone
 
-Terminals, files/editor/diff, the full git panel, and agent-status badges all work in the
-browser today; the SDK chat node is the one piece still desktop-only. See
-[`docs/SERVER.md`](./docs/SERVER.md) for the quickstart, security model, and current
-limitations.
+**Commands:**
+| Command | Action |
+| --- | --- |
+| `/terminals` | List active terminal sessions |
+| `/attach N` | View terminal N's current output |
+| `/send N <text>` | Send input to terminal N |
+| `/help` | Show all commands |
+
+Terminals, editors, the git panel, and agent-status badges all work in the
+browser today; the SDK chat node is desktop-only. See
+[`docs/SERVER.md`](./docs/SERVER.md) for details.
 
 ## 📦 Download
 
