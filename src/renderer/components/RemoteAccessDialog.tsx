@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useDialogStack } from './dialog-stack'
-import { useEntitlement } from '../state/entitlement'
 import { useProjects } from '../state/projects'
 import { hostShareOptions } from '../lib/relayHostShare'
 import { Button } from '@renderer/ui/Button'
@@ -10,17 +9,10 @@ import { Input } from '@renderer/ui/Input'
 import { Select } from '@renderer/ui/Select'
 
 /**
- * Remote access dialog — a self-contained popup reachable from the project (tab) caret menu, so
- * remote access isn't buried in Settings. Mirrors the Settings RemoteSection flow over the NEW
- * relay tunnel (`relayHost` / `relayClient`):
- *  - Host "Allow remote access" (Pro): start → show the single-use pairing offer + copy/stop.
- *  - Non-Pro: hosting is gated — show the upgrade popup (Upgrade → Stripe checkout).
- *  - Client "Connect to a host" (free): paste an offer → Canvas runs the SAS-compare + open-tab flow.
- * It deliberately does NOT import RemoteSection (which the Settings redesign owns).
+ * Remote access dialog — a self-contained popup reachable from the project (tab) caret menu.
+ * Hosting and connecting are both free.
  */
 export function RemoteAccessDialog({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const isPremium = useEntitlement((s) => s.isPremium)
-  const upgrade = useEntitlement((s) => s.upgrade)
   const projects = useProjects((s) => s.projects)
   const activeProjectId = useProjects((s) => s.activeProjectId)
   const [hostOffer, setHostOffer] = useState('')
@@ -28,8 +20,6 @@ export function RemoteAccessDialog({ onClose }: { onClose: () => void }): React.
   const [error, setError] = useState('')
   const [clientCode, setClientCode] = useState('')
 
-  // Which project this host shares with the joiner. Default = the active project (hoisted first
-  // by hostShareOptions); the user can pick any other OPEN project before minting the offer.
   const shareOptions = hostShareOptions(projects, activeProjectId)
   const [shareId, setShareId] = useState('')
   const effectiveShareId = shareOptions.some((o) => o.id === shareId)
@@ -37,8 +27,6 @@ export function RemoteAccessDialog({ onClose }: { onClose: () => void }): React.
     : (shareOptions[0]?.id ?? '')
   const sharedName = shareOptions.find((o) => o.id === effectiveShareId)?.name ?? ''
 
-  // Only the topmost modal answers a key (./dialog-stack) — the host approval ConfirmDialog opens
-  // on top of THIS dialog, and its Escape must not also close the one underneath.
   const isTop = useDialogStack()
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -52,9 +40,6 @@ export function RemoteAccessDialog({ onClose }: { onClose: () => void }): React.
     return () => window.removeEventListener('keydown', onKey)
   }, [isTop, onClose])
 
-  // HOST side — the NEW relay tunnel (`relayHost`). `start()` returns the single-use pairing offer;
-  // a connecting peer's approval + canvas sync are handled globally by Canvas (`relayHost.onPeerPending`
-  // / `relayHost.confirm`, and the CorePlatform seq-stamped reflector).
   const startHosting = async () => {
     setError('')
     setHostBusy(true)
@@ -71,9 +56,6 @@ export function RemoteAccessDialog({ onClose }: { onClose: () => void }): React.
     setHostOffer('')
     setHostBusy(false)
   }
-  // CLIENT side — hand the offer to Canvas, which runs the relay connect → SAS compare (window.confirm)
-  // → open-tab flow (the same `connectOffer` the dock/palette entry uses). No `relayClient.connect`
-  // here, so the SAS handshake lives in exactly one place.
   const connect = () => {
     const code = clientCode.trim()
     if (!code) return
@@ -95,63 +77,52 @@ export function RemoteAccessDialog({ onClose }: { onClose: () => void }): React.
         </div>
         <p className="remote-dialog__desc">
           Open terminals that run on another machine you own — end-to-end encrypted over the relay.
-          Hosting (sharing this machine) is Pro; connecting to a host is free.
         </p>
 
         <h4 className="remote-dialog__head4">Allow remote access</h4>
-        {isPremium ? (
-          hostOffer ? (
-            <div className="remote-dialog__block">
-              <p className="remote-dialog__hint">
-                Sharing <strong>{sharedName || 'this project'}</strong> — the joiner will see this
-                project and can run commands on this Mac. Share this pairing code (single use):
-              </p>
-              <Input
-                className="w-full"
-                readOnly
-                value={hostOffer}
-                onFocus={(e) => e.target.select()}
-              />
-              <div className="remote-dialog__row">
-                <CopyButton text={hostOffer} label="Copy code" />
-                <Button onClick={() => void stopHosting()}>Stop sharing</Button>
-              </div>
-            </div>
-          ) : (
-            <div className="remote-dialog__block">
-              {shareOptions.length > 1 ? (
-                <label className="remote-dialog__hint">
-                  Project to share
-                  <Select
-                    className="w-full mt-1"
-                    value={effectiveShareId}
-                    onChange={(e) => setShareId(e.target.value)}
-                  >
-                    {shareOptions.map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.name}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-              ) : (
-                <p className="remote-dialog__hint">
-                  Sharing <strong>{sharedName || 'this project'}</strong> — the joiner sees this
-                  project and can run commands on this Mac.
-                </p>
-              )}
-              <Button disabled={hostBusy} onClick={() => void startHosting()}>
-                {hostBusy ? 'Starting…' : 'Allow remote access'}
-              </Button>
-            </div>
-          )
-        ) : (
+        {hostOffer ? (
           <div className="remote-dialog__block">
             <p className="remote-dialog__hint">
-              Sharing this machine requires nodeterm Pro. Connecting to a host you were given a code
-              for is free.
+              Sharing <strong>{sharedName || 'this project'}</strong> — the joiner will see this
+              project and can run commands on this machine. Share this pairing code (single use):
             </p>
-            <Button onClick={() => void upgrade()}>Upgrade to Pro — $10/mo</Button>
+            <Input
+              className="w-full"
+              readOnly
+              value={hostOffer}
+              onFocus={(e) => e.target.select()}
+            />
+            <div className="remote-dialog__row">
+              <CopyButton text={hostOffer} label="Copy code" />
+              <Button onClick={() => void stopHosting()}>Stop sharing</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="remote-dialog__block">
+            {shareOptions.length > 1 ? (
+              <label className="remote-dialog__hint">
+                Project to share
+                <Select
+                  className="w-full mt-1"
+                  value={effectiveShareId}
+                  onChange={(e) => setShareId(e.target.value)}
+                >
+                  {shareOptions.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            ) : (
+              <p className="remote-dialog__hint">
+                Sharing <strong>{sharedName || 'this project'}</strong> — the joiner sees this
+                project and can run commands on this machine.
+              </p>
+            )}
+            <Button disabled={hostBusy} onClick={() => void startHosting()}>
+              {hostBusy ? 'Starting…' : 'Allow remote access'}
+            </Button>
           </div>
         )}
 

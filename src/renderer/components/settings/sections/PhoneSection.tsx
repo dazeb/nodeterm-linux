@@ -6,7 +6,6 @@ import { ConfirmDialog } from '../../ConfirmDialog'
 import { Button } from '@renderer/ui/Button'
 import { Switch } from '@renderer/ui/Switch'
 import { useSettings } from '@renderer/state/settings'
-import { useEntitlement } from '@renderer/state/entitlement'
 import { usePhonePairing } from '../usePhonePairing'
 
 const ROWS = {
@@ -48,7 +47,6 @@ export function PhoneSection({ isActive }: { isActive: boolean }): React.JSX.Ele
   const [devices, setDevices] = useState<PairedDevice[]>([])
   const [pendingRevoke, setPendingRevoke] = useState<PairedDevice | null>(null)
 
-  const isPremium = useEntitlement((s) => s.isPremium)
   const phoneAccessEnabled = useSettings((s) => s.settings.phoneAccessEnabled)
   const updateSettings = useSettings((s) => s.update)
 
@@ -105,20 +103,12 @@ export function PhoneSection({ isActive }: { isActive: boolean }): React.JSX.Ele
                 verified with a code the first time.
               </p>
             </div>
-            {isPremium ? (
-              <Switch
-                checked={phoneAccessEnabled}
-                onChange={togglePhoneAccess}
-                ariaLabel="Remote access from your phone"
-              />
-            ) : null}
+            <Switch
+              checked={phoneAccessEnabled}
+              onChange={togglePhoneAccess}
+              ariaLabel="Remote access from your phone"
+            />
           </div>
-          {!isPremium ? (
-            <p className="text-sm text-muted">
-              Remote access from anywhere requires nodeterm Pro. Pairing over your local network is
-              free — set it up below.
-            </p>
-          ) : null}
         </div>
       </SearchableRow>
 

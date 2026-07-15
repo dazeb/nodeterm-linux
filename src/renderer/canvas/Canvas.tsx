@@ -80,7 +80,6 @@ import { ConfirmDialog } from '../components/ConfirmDialog'
 import { ConsentNotice } from '../remote/ConsentNotice'
 import { peerApprovalView } from '@shared/remote/approval'
 import { promptDialog } from '../components/promptDialog'
-import { UpgradeDialog } from '../components/UpgradeDialog'
 import { RemotePicker } from '../components/RemotePicker'
 import { WorktreeDialog } from '../components/WorktreeDialog'
 import { NotifyConsentDialog } from '../components/NotifyConsentDialog'
@@ -165,8 +164,6 @@ import { useSessionNaming } from '../state/sessionNaming'
 import { useSshServers } from '../state/sshServers'
 import { useSshConn } from '../state/sshConn'
 import { useSystemAccount } from '../state/systemAccount'
-import { requireProOr } from '../state/upgradeGate'
-import { useEntitlement } from '../state/entitlement'
 import type { SshServer } from '@shared/ssh'
 import { sshHostKey } from '@shared/ssh'
 import type { CanvasNodeState, Project, SshProjectStatus, TranscriptHit } from '@shared/types'
@@ -1022,10 +1019,7 @@ export function Canvas() {
   // 1) Load the whole workspace once and hydrate the projects store.
   useEffect(() => {
     let cancelled = false
-    // Pull the current license status: the main process broadcasts it on launch, but that
-    // broadcast races renderer load and is dropped if it fires first — without this pull a
-    // Pro user can start (and stay) gated as free until the next restart.
-    void useEntitlement.getState().hydrate()
+    // Pull the current settings state on mount
     useSettings
       .getState()
       .hydrate()
@@ -1068,8 +1062,7 @@ export function Canvas() {
     // switch back to a connected project is a no-op. Remote tmux is unaffected by the master.
     if (project.ssh) {
       const ssh = project.ssh
-      requireProOr('SSH Remote Projects', () => {
-        window.nodeTerminal.sshProject
+      window.nodeTerminal.sshProject
           .connect(project.id, ssh.server, ssh.remoteCwd)
           .then(async (info) => {
             // Arm remote git routing for the active project BEFORE the sshConn entry appears, so the
@@ -1080,7 +1073,6 @@ export function Canvas() {
           .catch(() => {
             /* status surfaced via onStatus → the connection banner */
           })
-      })
     } else {
       // Local active project: ensure all git ops run local (no stale remote from a prior SSH tab).
       void api.git.setActiveRemote(null)
@@ -2392,9 +2384,9 @@ export function Canvas() {
     [setNodes, markDirty, screenToFlowPosition, viewCenter]
   )
 
-  // Pro-gated entry to the SSH server picker: free users get the upgrade dialog instead.
+  // Entry to the SSH server picker
   const openRemotePicker = useCallback((screenPos: { x: number; y: number }) => {
-    requireProOr('Remote SSH terminals', () => setRemotePicker(screenPos))
+    setRemotePicker(screenPos)
   }, [])
 
   // ⌘T = new terminal, ⌘⇧C = new default agent (ignored while typing in a field/terminal).
@@ -5275,9 +5267,7 @@ export function Canvas() {
           label: `New remote: ${srv.label}`,
           icon: <IconTerminal />,
           run: () =>
-            requireProOr('Remote SSH terminals', () =>
               addSshTerminal(srv, { x: window.innerWidth / 2, y: window.innerHeight / 2 })
-            )
         })
       ),
       {
@@ -5857,8 +5847,6 @@ export function Canvas() {
           }}
         />
       )}
-
-      <UpgradeDialog />
 
       {remotePicker && (
         <RemotePicker

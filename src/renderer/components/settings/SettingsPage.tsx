@@ -15,7 +15,6 @@ import { CustomAgentsSection } from './sections/CustomAgentsSection'
 import { NotificationsSection } from './sections/NotificationsSection'
 import { CommitSection } from './sections/CommitSection'
 import { TmuxSection } from './sections/TmuxSection'
-import { LicenseSection } from './sections/LicenseSection'
 import { RemoteSection } from './sections/RemoteSection'
 import { TeamAccessSection } from './sections/TeamAccessSection'
 import { SshSection } from './sections/SshSection'
@@ -74,7 +73,6 @@ export function SettingsPage({
             <NotificationsSection isActive={active === 'notifications'} />
             <CommitSection isActive={active === 'commit'} />
             <TmuxSection isActive={active === 'tmux'} />
-            <LicenseSection isActive={active === 'license'} />
             <RemoteSection isActive={active === 'remote'} onClose={onClose} />
             <TeamAccessSection isActive={active === 'team-access'} onClose={onClose} />
             <SshSection isActive={active === 'ssh'} />

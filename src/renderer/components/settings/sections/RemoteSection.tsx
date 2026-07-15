@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useEntitlement } from '../../../state/entitlement'
 import { useProjects } from '../../../state/projects'
 import { hostShareOptions } from '../../../lib/relayHostShare'
 import { SettingsSection } from '../SettingsSection'
@@ -26,7 +25,6 @@ export function RemoteSection({
   isActive: boolean
   onClose: () => void
 }): React.JSX.Element {
-  const isPremium = useEntitlement((s) => s.isPremium)
   const projects = useProjects((s) => s.projects)
   const activeProjectId = useProjects((s) => s.activeProjectId)
   const [hostOffer, setHostOffer] = useState('')
@@ -35,17 +33,13 @@ export function RemoteSection({
   const [clientCode, setClientCode] = useState('')
   const [connecting, setConnecting] = useState(false)
 
-  // Which project this host shares with the joiner. Default = the active project (hoisted first
-  // by hostShareOptions); the user can pick any other OPEN project before minting the offer.
   const shareOptions = hostShareOptions(projects, activeProjectId)
   const [shareId, setShareId] = useState('')
   const effectiveShareId = shareOptions.some((o) => o.id === shareId)
     ? shareId
     : (shareOptions[0]?.id ?? '')
   const sharedName = shareOptions.find((o) => o.id === effectiveShareId)?.name ?? ''
-  // HOST side — the NEW relay tunnel (`relayHost`). `start()` returns the single-use pairing offer;
-  // a connecting peer's approval + canvas sync are handled globally by Canvas (`relayHost.onPeerPending`
-  // / `relayHost.confirm`, and the CorePlatform seq-stamped reflector — no old canvas-mirror flag).
+
   const startHosting = async () => {
     setRemoteError('')
     setHostBusy(true)
@@ -62,9 +56,6 @@ export function RemoteSection({
     setHostOffer('')
     setHostBusy(false)
   }
-  // CLIENT side — hand the offer to Canvas, which runs the relay connect → SAS compare → open-tab
-  // flow (the same `connectOffer` the dock/palette "New Remote Connection" uses). We deliberately do
-  // NOT call `relayClient.connect` here, so the SAS handshake lives in exactly one place.
   const connectToHost = () => {
     const code = clientCode.trim()
     if (!code) return
@@ -81,72 +72,65 @@ export function RemoteSection({
     <SettingsSection
       id="remote"
       title="Remote access"
-      description="Open terminals that run on another machine you own — end-to-end encrypted over the relay. Hosting (sharing this machine) is Pro; connecting to a host is free."
+      description="Open terminals that run on another machine you own — end-to-end encrypted over the relay."
       isActive={isActive}
       searchEntries={ENTRIES}
     >
       <SearchableRow {...ROWS.allow}>
         <div className="space-y-3">
           <h4 className="text-[13px] font-medium text-text">Allow remote access</h4>
-          {isPremium ? (
-            hostOffer ? (
-              <div className="space-y-2">
-                <p className="text-sm text-muted">
-                  Sharing <strong className="text-text">{sharedName || 'this project'}</strong> —
-                  the joiner will see this project and can run commands on this Mac. Share this
-                  pairing code with the other device (single use):
-                </p>
+          {hostOffer ? (
+            <div className="space-y-2">
+              <p className="text-sm text-muted">
+                Sharing <strong className="text-text">{sharedName || 'this project'}</strong> —
+                the joiner will see this project and can run commands on this machine. Share this
+                pairing code with the other device (single use):
+              </p>
+              <FieldRow
+                label="Pairing code"
+                control={
+                  <Input
+                    className="w-72"
+                    readOnly
+                    value={hostOffer}
+                    onFocus={(e) => e.target.select()}
+                  />
+                }
+              />
+              <div className="flex gap-2">
+                <CopyButton text={hostOffer} label="Copy code" />
+                <Button onClick={() => void stopHosting()}>Stop sharing</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {shareOptions.length > 1 ? (
                 <FieldRow
-                  label="Pairing code"
+                  label="Project to share"
                   control={
-                    <Input
+                    <Select
                       className="w-72"
-                      readOnly
-                      value={hostOffer}
-                      onFocus={(e) => e.target.select()}
-                    />
+                      value={effectiveShareId}
+                      onChange={(e) => setShareId(e.target.value)}
+                    >
+                      {shareOptions.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.name}
+                        </option>
+                      ))}
+                    </Select>
                   }
                 />
-                <div className="flex gap-2">
-                  <CopyButton text={hostOffer} label="Copy code" />
-                  <Button onClick={() => void stopHosting()}>Stop sharing</Button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {shareOptions.length > 1 ? (
-                  <FieldRow
-                    label="Project to share"
-                    control={
-                      <Select
-                        className="w-72"
-                        value={effectiveShareId}
-                        onChange={(e) => setShareId(e.target.value)}
-                      >
-                        {shareOptions.map((o) => (
-                          <option key={o.id} value={o.id}>
-                            {o.name}
-                          </option>
-                        ))}
-                      </Select>
-                    }
-                  />
-                ) : (
-                  <p className="text-sm text-muted">
-                    Sharing <strong className="text-text">{sharedName || 'this project'}</strong> —
-                    the joiner sees this project and can run commands on this Mac.
-                  </p>
-                )}
-                <Button disabled={hostBusy} onClick={() => void startHosting()}>
-                  {hostBusy ? 'Starting…' : 'Allow remote access'}
-                </Button>
-              </div>
-            )
-          ) : (
-            <p className="text-sm text-muted">
-              Hosting this machine requires nodeterm Pro — upgrade above. Connecting to a host you
-              were given a code for is free.
-            </p>
+              ) : (
+                <p className="text-sm text-muted">
+                  Sharing <strong className="text-text">{sharedName || 'this project'}</strong> —
+                  the joiner sees this project and can run commands on this machine.
+                </p>
+              )}
+              <Button disabled={hostBusy} onClick={() => void startHosting()}>
+                {hostBusy ? 'Starting…' : 'Allow remote access'}
+              </Button>
+            </div>
           )}
         </div>
       </SearchableRow>

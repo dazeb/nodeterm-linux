@@ -81,7 +81,7 @@ export function TeamAccessSection({
     <SettingsSection
       id="team-access"
       title="Team Access"
-      description="Share this Mac with your team — one seat per teammate, $5/seat/month."
+      description="Share this machine with your team — one seat per teammate."
       isActive={isActive}
       searchEntries={ENTRIES}
     >

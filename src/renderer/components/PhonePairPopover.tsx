@@ -2,11 +2,8 @@ import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Switch } from '@renderer/ui/Switch'
 import { useSettings } from '@renderer/state/settings'
-import { useEntitlement } from '@renderer/state/entitlement'
-import { useUpgradeGate } from '@renderer/state/upgradeGate'
 import { usePhonePairing } from './settings/usePhonePairing'
 
-/** Same deep link the Phone settings section uses for the Remote Login toggle. */
 const REMOTE_LOGIN_SETTINGS_URL =
   'x-apple.systempreferences:com.apple.preferences.sharing?Services_RemoteLogin'
 const isMac = /Mac/i.test(navigator.platform || navigator.userAgent)
@@ -14,35 +11,28 @@ const isMac = /Mac/i.test(navigator.platform || navigator.userAgent)
 /**
  * Quick phone pairing, anchored under the top-right phone button: opens straight into a live QR
  * (no "Start pairing" click — that's the whole point of the shortcut), with the standing
- * "Reach this Mac from anywhere" toggle below and a link into the full Phone settings.
- * Closing the popover stops an unfinished pairing (the shared hook's unmount rule).
+ * "Reach this machine from anywhere" toggle below and a link into the full Phone settings.
  */
 export function PhonePairPopover({
   anchor,
   onClose,
   onOpenSettings
 }: {
-  /** Viewport rect of the phone button — the popover right-aligns under it. */
   anchor: { right: number; bottom: number }
   onClose: () => void
   onOpenSettings: () => void
 }): React.JSX.Element {
   const { phase, qr, sshOpen, sshHealed, error, busy, start } = usePhonePairing()
-
-  const isPremium = useEntitlement((s) => s.isPremium)
   const phoneAccessEnabled = useSettings((s) => s.settings.phoneAccessEnabled)
   const updateSettings = useSettings((s) => s.update)
 
   const togglePhoneAccess = (next: boolean): void => {
     updateSettings({ phoneAccessEnabled: next })
-    // Start/stop the standing relay host immediately (main also honors the Pro gate).
     window.nodeTerminal.remoteHost.setPhoneAccess(next)
   }
 
-  // Straight into the QR on open (local-network pairing is free — no gate here).
   useEffect(() => {
     void start()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run exactly once, on open
   }, [])
 
   useEffect(() => {
@@ -110,21 +100,14 @@ export function PhonePairPopover({
         <div className="phone-pair__row">
           <div className="phone-pair__row-text">
             <div className="phone-pair__row-title">
-              Reach this Mac from anywhere
-              {!isPremium && <span className="phone-pair__pro">PRO</span>}
+              Reach this machine from anywhere
             </div>
             <div className="phone-pair__row-sub">E2E encrypted over the relay — not just your LAN.</div>
           </div>
           <Switch
-            checked={isPremium && phoneAccessEnabled}
-            onChange={(next) => {
-              if (!isPremium) {
-                useUpgradeGate.getState().show('Remote access from your phone')
-                return
-              }
-              togglePhoneAccess(next)
-            }}
-            ariaLabel="Reach this Mac from anywhere"
+            checked={phoneAccessEnabled}
+            onChange={(next) => togglePhoneAccess(next)}
+            ariaLabel="Reach this machine from anywhere"
           />
         </div>
 
