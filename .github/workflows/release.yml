@@ -1,23 +1,19 @@
 name: Release
 
-# Build, code-sign, and notarize the macOS app on every version tag (e.g. v0.1.1),
-# then publish the artifacts (dmg + zip + latest-mac.yml + blockmaps). Those files
-# are what the self-hosted update feed at https://nodeterm.dev/updates serves.
+# Build and publish Linux AppImage + deb on every version tag (e.g. v0.4.0),
+# then create a GitHub Release with the artifacts. The auto-updater (electron-updater
+# with GitHub provider) checks this release page for new versions.
 on:
   push:
     tags:
       - 'v*'
 
 permissions:
-  contents: write # allow creating the GitHub Release (canonical artifact store)
+  contents: write
 
 jobs:
-  release-mac:
-    # Runs on a SELF-HOSTED Apple Silicon Mac (no GitHub macOS-runner minutes — those are billed
-    # 10× and a slow notarization poll can burn hundreds). Everything else is identical: the runner
-    # signs + notarizes + publishes the GitHub Release, which nodeterm.dev proxies for downloads and
-    # the update feed. The runner checks out into its own _work dir, so it never touches the dev repo.
-    runs-on: [self-hosted, macOS, ARM64]
+  release-linux:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -26,62 +22,29 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libxcb-dri3-0 libxcb-present0 libxshmfence-dev \
+            libgbm-dev libxkbcommon-x11-0 libxcomposite-dev \
+            libxdamage-dev libxrandr-dev libxtst-dev \
+            libnss3 libatk-bridge2.0-0 libdrm2
+
       - name: Install dependencies
         run: npm ci
 
-      - name: Build, sign & notarize
-        run: |
-          printf '%s' "$APPLE_API_KEY_B64" | base64 --decode > "$RUNNER_TEMP/notary-key.p8"
-          export APPLE_API_KEY="$RUNNER_TEMP/notary-key.p8"
-          # Apple's notarization can take a long time, and @electron/notarize has no retry: a single
-          # transient network blip while polling appstoreconnect (NSURLError -1009) fails the whole
-          # build even though the submission gets Accepted. Retry the release up to 3 times so one
-          # blip during a long poll doesn't sink the release.
-          n=1
-          until npm run release; do
-            if [ "$n" -ge 3 ]; then
-              echo "::error::release failed after $n attempts"
-              exit 1
-            fi
-            echo "::warning::release attempt $n failed (likely transient notarization network error); retrying in 60s…"
-            n=$((n + 1))
-            sleep 60
-          done
+      - name: Build Linux release
+        run: npm run release:linux
         env:
-          # Developer ID Application cert, base64-encoded .p12 + its password.
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          # Apple notarization via App Store Connect API key: the .p8 is stored base64-encoded in
-          # a secret, decoded to a file at runtime, and its path handed to electron-builder.
-          APPLE_API_KEY_B64: ${{ secrets.APPLE_API_KEY_B64 }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # NOTE: there is deliberately no actions/upload-artifact step. Each release is ~800 MB of
-      # DMGs + zips, and Actions artifact storage is a small, billed quota that those copies filled
-      # up (the release then failed with "Artifact storage quota has been hit"). The GitHub Release
-      # below is the canonical store — it does not consume that quota — so the extra 90-day copy
-      # bought nothing. Don't add it back.
-
-      # Canonical copy of every release on GitHub. The update feed itself lives on
-      # nodeterm.dev (see the deploy step below), but keeping a GitHub Release means
-      # there is always a downloadable, versioned backup.
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          generate_release_notes: true
           files: |
-            dist/*.dmg
-            dist/*.zip
+            dist/*.AppImage
+            dist/*.deb
             dist/*.yml
             dist/*.blockmap
-
-      # Publish the feed to nodeterm.dev/updates. Fill in for your host. Example for
-      # SSH/rsync (store the private key as the DEPLOY_SSH_KEY secret):
-      #
-      # - name: Deploy update feed to nodeterm.dev
-      #   run: |
-      #     mkdir -p ~/.ssh && echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
-      #     chmod 600 ~/.ssh/id_ed25519
-      #     ssh-keyscan nodeterm.dev >> ~/.ssh/known_hosts
-      #     rsync -avz dist/*.dmg dist/*.zip dist/*.yml dist/*.blockmap \
-      #       deploy@nodeterm.dev:/var/www/nodeterm.dev/updates/
