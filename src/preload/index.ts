@@ -478,7 +478,18 @@ const api: NodeTerminalApi = {
     ipcRenderer.on(IPC.agentControl, handler)
     return () => ipcRenderer.removeListener(IPC.agentControl, handler)
   },
-  sendAgentControlResult: (payload) => ipcRenderer.send(IPC.agentControlResult, payload)
+  sendAgentControlResult: (payload) => ipcRenderer.send(IPC.agentControlResult, payload),
+
+  telegram: {
+    start: (token?: string) => ipcRenderer.invoke(IPC.telegramBotStart, token),
+    stop: () => ipcRenderer.invoke(IPC.telegramBotStop),
+    getStatus: () => ipcRenderer.invoke(IPC.telegramBotStatus),
+    onStatusChange: (listener) => {
+      const handler = (_e: unknown, status: Parameters<typeof listener>[0]) => listener(status)
+      ipcRenderer.on(IPC.telegramBotStatus, handler)
+      return () => ipcRenderer.removeListener(IPC.telegramBotStatus, handler)
+    }
+  }
 }
 
 contextBridge.exposeInMainWorld('nodeTerminal', api)

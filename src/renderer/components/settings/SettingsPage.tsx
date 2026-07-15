@@ -8,7 +8,7 @@ import { TerminalSection } from './sections/TerminalSection'
 import { ShellSection } from './sections/ShellSection'
 import { BehaviorSection } from './sections/BehaviorSection'
 import { AppearanceSection } from './sections/AppearanceSection'
-import { PhoneSection } from './sections/PhoneSection'
+import { TelegramSection } from './sections/TelegramSection'
 import { AgentsSection } from './sections/AgentsSection'
 import { AccountsSection } from './sections/AccountsSection'
 import { CustomAgentsSection } from './sections/CustomAgentsSection'
@@ -66,7 +66,7 @@ export function SettingsPage({
             <ShellSection isActive={active === 'shell'} />
             <BehaviorSection isActive={active === 'behavior'} />
             <AppearanceSection isActive={active === 'appearance'} />
-            <PhoneSection isActive={active === 'phone'} />
+            <TelegramSection isActive={active === 'telegram'} />
             <AgentsSection isActive={active === 'agents'} />
             <AccountsSection isActive={active === 'accounts'} />
             <CustomAgentsSection isActive={active === 'custom-agents'} />

@@ -49,6 +49,7 @@ import { initTranscriptIndex, searchTranscripts } from '../core/transcript-index
 import { initTelemetry } from './telemetry'
 import { initClaudeUsage } from './claude-usage'
 import { initLicense, isPremium, getStoredEntitlement } from '../core/license'
+import { initTelegramBot } from '../core/telegram-bot'
 import { initClaudeAccounts } from './claude-accounts'
 import { claudeCliCaps, registerClaudeCliIpc } from '../core/claude-cli'
 import { claudeConfigDirFor } from '../core/claude-config-dir'
@@ -1015,6 +1016,22 @@ app.whenReady().then(async () => {
   initCanvasControl()
   initClaudeUsage(win)
   initTelemetry(() => settingsStore.get())
+  // Telegram bot for remote terminal access (optional — requires a bot token).
+  initTelegramBot({
+    listSessions: async () => {
+      const ids = await ptyManager.listNodetermSessions().catch(() => [])
+      return ids.map((id) => ({
+        id,
+        title: id,
+        cwd: undefined
+      }))
+    },
+    captureSession: (sessionId) => ptyManager.captureSession(sessionId),
+    sendInput: (sessionId, text) => {
+      ptyManager.write(null, sessionId, text)
+      return Promise.resolve()
+    }
+  })
   // Declared before initLicense so its onChange hook can re-reconcile the standing host once the
   // async launch-time entitlement refresh settles (fixes the boot race where Pro isn't yet valid
   // when syncFromSettings first runs).

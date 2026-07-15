@@ -23,10 +23,10 @@ const PATHS: Record<SettingsSectionId, React.JSX.Element> = {
       <path d="M8 2.5a5.5 5.5 0 0 0 0 11z" fill="currentColor" stroke="none" />
     </>
   ),
-  phone: (
+  telegram: (
     <>
-      <rect x="4.5" y="2" width="7" height="12" rx="1.6" />
-      <path d="M7 12h2" />
+      <circle cx="6.5" cy="10" r="1.5" />
+      <path d="M3.5 7 8 3l4.5 4M5 7v8h6V7" />
     </>
   ),
   agents: (

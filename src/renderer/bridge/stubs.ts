@@ -305,7 +305,13 @@ export function buildStubApi(): Omit<
     openNotificationSettings: pnoop,
     onFocusNode: noopUnsub,
     onAgentControl: noopUnsub,
-    sendAgentControlResult: noop
+    sendAgentControlResult: noop,
+    telegram: {
+      start: () => Promise.resolve({ running: false, botUsername: null, error: null }),
+      stop: () => Promise.resolve({ running: false, botUsername: null, error: null }),
+      getStatus: () => Promise.resolve({ running: false, botUsername: null, error: null }),
+      onStatusChange: () => noop
+    }
   } satisfies Omit<
     NodeTerminalApi,
     | 'pty'

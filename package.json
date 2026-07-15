@@ -102,6 +102,7 @@
     "monaco-editor": "^0.52.2",
     "node-pty": "^1.0.0",
     "qrcode": "^1.5.4",
+    "telegraf": "^4.16.3",
     "tweetnacl": "^1.0.3",
     "ws": "^8.21.0",
     "zustand": "^4.5.7"

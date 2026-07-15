@@ -265,5 +265,10 @@ export const IPC = {
   pairingDone: 'pairing:done',
   pairingProbeSsh: 'pairing:probe-ssh',
   pairingListDevices: 'pairing:listDevices',
-  pairingRevokeDevice: 'pairing:revokeDevice'
+  pairingRevokeDevice: 'pairing:revokeDevice',
+
+  // Telegram bot
+  telegramBotStart: 'telegram:bot:start',
+  telegramBotStop: 'telegram:bot:stop',
+  telegramBotStatus: 'telegram:bot:status'
 } as const

@@ -1089,6 +1089,12 @@ export interface LicenseStatus {
   error: string | null
 }
 
+export interface TelegramBotStatus {
+  running: boolean
+  botUsername: string | null
+  error: string | null
+}
+
 export interface LicenseApi {
   /** Open Stripe checkout bound to this device and poll for the entitlement (no key paste).
    * Returns the current status immediately; the active status arrives via onChange. */
@@ -1353,4 +1359,11 @@ export interface NodeTerminalApi {
     result?: unknown
     error?: string
   }): void
+  /** Telegram bot control. */
+  telegram: {
+    start(token?: string): Promise<TelegramBotStatus>
+    stop(): Promise<TelegramBotStatus>
+    getStatus(): Promise<TelegramBotStatus>
+    onStatusChange(listener: (status: TelegramBotStatus) => void): () => void
+  }
 }
