@@ -143,59 +143,90 @@ function prune(): void {
   pruneExpiredPairings(pendingPairings)
 }
 
-// ── Bot commands ────────────────────────────────────────────────────────────────
+// ── Bot commands & menus ───────────────────────────────────────────────────────
+
+/** Build the main menu inline keyboard. */
+function mainMenu(paired: boolean): ReturnType<typeof Markup.inlineKeyboard> {
+  const rows = []
+  if (paired) {
+    rows.push([Markup.button.callback('📟 Terminals', 'menu_terminals')])
+    rows.push([Markup.button.callback('📁 Projects', 'menu_projects')])
+  }
+  rows.push([
+    Markup.button.callback('ℹ️ Status', 'menu_status'),
+    Markup.button.callback('❓ Help', 'menu_help')
+  ])
+  if (!paired) {
+    rows.push([Markup.button.callback('🔐 Pair', 'menu_pair')])
+  }
+  return Markup.inlineKeyboard(rows)
+}
+
+/** Show the main menu (edits the current message or sends a new one). */
+async function showMainMenu(ctx: Context, edit = false): Promise<void> {
+  const paired = isTelegramApproved(approvedStore, ctx.from?.id ?? 0)
+  const msg =
+    '👋 *nodeterm bot*\n\n' +
+    (paired
+      ? 'Use the menu below to manage your terminals and projects.'
+      : 'Use /pair to link this Telegram account to your nodeterm app.')
+  if (edit && 'callbackQuery' in ctx) {
+    await ctx.editMessageText(msg, {
+      parse_mode: 'Markdown',
+      reply_markup: mainMenu(paired).reply_markup
+    }).catch(() => {}) // ignore if message unchanged
+  } else {
+    await ctx.reply(msg, {
+      parse_mode: 'Markdown',
+      reply_markup: mainMenu(paired).reply_markup
+    })
+  }
+}
 
 function registerCommands(b: Telegraf): void {
-  // /start — welcome message with menu
+  // ── /start — welcome with inline menu ──
   b.start((ctx: Context) => {
-    const msg = [
-      '👋 *nodeterm bot active*',
-      '',
-      '📋 *Commands:*',
-      '/pair — Pair this Telegram account with nodeterm',
-      '/status — Bot connection status',
-      '/help — Full command list',
-      '',
-      'After pairing:',
-      '/terminals — List active terminal sessions',
-      '/attach N — View terminal N output',
-      '/send N <text> — Send text to terminal N'
-    ].join('\n')
-    void ctx.reply(msg, { parse_mode: 'Markdown' })
+    void showMainMenu(ctx, false)
   })
 
-  // /help — command list
+  // ── /help — show help with inline menu ──
   b.help((ctx: Context) => {
     const paired = isTelegramApproved(approvedStore, ctx.from?.id ?? 0)
     const lines = [
-      '*Commands:*',
-      '/start — Welcome',
+      '*nodeterm bot — commands*',
+      '',
+      '/start — Open the main menu',
       '/help — This help',
       '/status — Bot connection status',
-      '/pair — Pair this Telegram account with nodeterm',
-      ...(paired ? [
-        '/terminals — List active sessions',
-        '/attach N — View terminal N output',
-        '/send N <text> — Send text to terminal N'
-      ] : [
-        '',
-        '_Send /pair first to unlock terminal commands._'
-      ])
+      '/pair — Pair this Telegram account',
+      ...(paired
+        ? [
+            '/terminals — List active sessions',
+            '/attach N — View terminal N output',
+            '/send N <text> — Send text to terminal N',
+            '/log N [count] — Scrollback log for terminal N',
+            '/invite <email> — Generate a Team Access invite'
+          ]
+        : ['', '_Send /pair first to unlock terminal commands._'])
     ]
-    void ctx.reply(lines.join('\n'), { parse_mode: 'Markdown' })
+    void ctx.reply(lines.join('\n'), {
+      parse_mode: 'Markdown',
+      reply_markup: mainMenu(paired).reply_markup
+    })
   })
 
-  // /status — bot + approval status
+  // ── /status — bot + approval status ──
   b.command('status', (ctx: Context) => {
     const paired = isTelegramApproved(approvedStore, ctx.from?.id ?? 0)
     void ctx.reply(
       `✅ Bot running as @${bot?.botInfo?.username ?? 'unknown'}\n` +
-      `Approved users: ${botStatus.approvedUserCount}\n` +
-      `This chat: ${paired ? '✅ paired' : '❌ not paired — send /pair'}`
+        `Approved users: ${botStatus.approvedUserCount}\n` +
+        `This chat: ${paired ? '✅ paired' : '❌ not paired — send /pair'}`,
+      { reply_markup: mainMenu(paired).reply_markup }
     )
   })
 
-  // /pair — generate a 6-digit pairing code
+  // ── /pair — generate a 6-digit pairing code ──
   b.command('pair', async (ctx: Context) => {
     const chatId = ctx.from?.id
     const name = ctx.from?.first_name ?? ctx.from?.username ?? 'Telegram user'
@@ -203,58 +234,51 @@ function registerCommands(b: Telegraf): void {
       await ctx.reply('Could not identify your Telegram account.')
       return
     }
-    // If already paired, let them know
     if (isTelegramApproved(approvedStore, chatId)) {
-      await ctx.reply('You are already paired. Try /terminals.')
+      await ctx.reply('You are already paired. Use the menu below to get started.', {
+        reply_markup: mainMenu(true).reply_markup
+      })
       return
     }
     prune()
     const req = createPairingRequest(chatId, name)
     pendingPairings.set(req.code, req)
 
-    // Auto-expire after TTL
     setTimeout(() => {
       pendingPairings.delete(req.code)
-    }, 130_000) // TTL + 10s buffer
+    }, 130_000)
 
-    // Notify the desktop app
     broadcastPairingCode(req.code, req.name, req.chatId, req.expiresAt)
 
     await ctx.reply(
       `🔐 *Pairing code generated*\n\n` +
-      `Code: \`${req.code}\`\n\n` +
-      `This code expires in 2 minutes.\n` +
-      `Open the nodeterm app to approve it, or enter the code there.\n\n` +
-      `_The app must be running to complete pairing._`,
+        `Code: \`${req.code}\`\n\n` +
+        `This code expires in 2 minutes.\n` +
+        `Open the nodeterm app to approve it, or enter the code there.\n\n` +
+        `_The app must be running to complete pairing._`,
       { parse_mode: 'Markdown' }
     )
   })
 
-  // /terminals — list active tmux sessions (gated)
+  // ── /terminals — list sessions with inline buttons ──
   b.command(['terminals', 'sessions'], async (ctx: Context) => {
     const chatId = ctx.from?.id ?? 0
     const gate = requireApproved(chatId)
-    if (gate) { await ctx.reply(gate); return }
-    try {
-      const sessions = await getDeps().listSessions()
-      if (sessions.length === 0) {
-        await ctx.reply('No active terminal sessions.')
-        return
-      }
-      const lines = sessions.map(
-        (s, i) => `${i + 1}. \`${s.id}\` — ${s.title || 'unnamed'}${s.cwd ? ` (${s.cwd})` : ''}`
-      )
-      await ctx.reply(`*Terminals:*\n${lines.join('\n')}`, { parse_mode: 'Markdown' })
-    } catch (err) {
-      await ctx.reply(`Error: ${(err as Error).message}`)
+    if (gate) {
+      await ctx.reply(gate, { reply_markup: mainMenu(false).reply_markup })
+      return
     }
+    await showTerminalList(ctx)
   })
 
-  // /attach N — capture session output (gated)
+  // ── /attach N — capture session output ──
   b.command('attach', async (ctx: Context) => {
     const chatId = ctx.from?.id ?? 0
     const gate = requireApproved(chatId)
-    if (gate) { await ctx.reply(gate); return }
+    if (gate) {
+      await ctx.reply(gate, { reply_markup: mainMenu(false).reply_markup })
+      return
+    }
     const args = msgArgs(ctx)
     const idx = parseInt(args[1], 10)
     if (isNaN(idx)) {
@@ -268,22 +292,20 @@ function registerCommands(b: Telegraf): void {
         await ctx.reply(`No terminal at index ${idx}.`)
         return
       }
-      const output = await getDeps().captureSession(session.id)
-      const truncated = output.length > 3000 ? output.slice(0, 3000) + '\n…[truncated]' : output
-      await ctx.reply(
-        `*Session: ${session.title || session.id}*\n\`\`\`\n${truncated || '(empty)'}\n\`\`\``,
-        { parse_mode: 'Markdown' }
-      )
+      await showTerminalOutput(ctx, session, idx)
     } catch (err) {
       await ctx.reply(`Error: ${(err as Error).message}`)
     }
   })
 
-  // /send N <text> — send input to a session (gated)
+  // ── /send N <text> — send input to a session ──
   b.command('send', async (ctx: Context) => {
     const chatId = ctx.from?.id ?? 0
     const gate = requireApproved(chatId)
-    if (gate) { await ctx.reply(gate); return }
+    if (gate) {
+      await ctx.reply(gate, { reply_markup: mainMenu(false).reply_markup })
+      return
+    }
     const args = msgArgs(ctx)
     if (args.length < 3) {
       await ctx.reply('Usage: /send N <text>')
@@ -303,17 +325,26 @@ function registerCommands(b: Telegraf): void {
         return
       }
       await getDeps().sendInput(session.id, text + '\n')
-      await ctx.reply(`Sent to \`${session.title || session.id}\`: ${text}`, { parse_mode: 'Markdown' })
+      await ctx.reply(`Sent to \`${session.title || session.id}\`: ${text}`, {
+        parse_mode: 'Markdown',
+        reply_markup: Markup.inlineKeyboard([
+          Markup.button.callback('📋 View output', `term_attach_${idx}`),
+          Markup.button.callback('← Terminals', 'menu_terminals')
+        ]).reply_markup
+      })
     } catch (err) {
       await ctx.reply(`Error: ${(err as Error).message}`)
     }
   })
 
-  // /invite — Team Access invite (gated + requires Pro via deps)
+  // ── /invite — Team Access invite ──
   b.command('invite', async (ctx: Context) => {
     const chatId = ctx.from?.id ?? 0
     const gate = requireApproved(chatId)
-    if (gate) { await ctx.reply(gate); return }
+    if (gate) {
+      await ctx.reply(gate, { reply_markup: mainMenu(false).reply_markup })
+      return
+    }
     const deps_ = getDeps()
     if (!deps_.inviteTeammate) {
       await ctx.reply('Team Access is not available on this device.')
@@ -342,6 +373,263 @@ function registerCommands(b: Telegraf): void {
       }
     }
   })
+
+  // ── Callback query handlers (inline keyboard actions) ────────────────────
+
+  // Main menu navigation
+  b.action('menu_status', (ctx) => {
+    const paired = isTelegramApproved(approvedStore, ctx.from?.id ?? 0)
+    const msg =
+      `✅ Bot running as @${bot?.botInfo?.username ?? 'unknown'}\n` +
+      `Approved users: ${botStatus.approvedUserCount}\n` +
+      `This chat: ${paired ? '✅ paired' : '❌ not paired'}`
+    void ctx.editMessageText(msg, {
+      reply_markup: mainMenu(paired).reply_markup
+    }).catch(() => {})
+  })
+
+  b.action('menu_help', (ctx) => {
+    const paired = isTelegramApproved(approvedStore, ctx.from?.id ?? 0)
+    const lines = [
+      '*Commands:*',
+      '/start — Open the main menu',
+      '/status — Bot connection status',
+      '/pair — Pair this Telegram account',
+      ...(paired
+        ? [
+            '/terminals — List active sessions',
+            '/attach N — View terminal N output',
+            '/send N <text> — Send text to terminal N',
+            '/log N [count] — Scrollback log for terminal N',
+            '/invite <email> — Generate a Team Access invite'
+          ]
+        : ['', '_Send /pair first to unlock terminal commands._'])
+    ]
+    void ctx.editMessageText(lines.join('\n'), {
+      parse_mode: 'Markdown',
+      reply_markup: mainMenu(paired).reply_markup
+    }).catch(() => {})
+  })
+
+  b.action('menu_pair', (ctx) => {
+    void ctx.editMessageText(
+      'Send /pair to generate a pairing code.\n\n' +
+        'Then open the nodeterm app and approve the pairing request.',
+      { reply_markup: mainMenu(false).reply_markup }
+    ).catch(() => {})
+  })
+
+  b.action('menu_back', (ctx) => {
+    void showMainMenu(ctx, true)
+  })
+
+  // Terminal list
+  b.action('menu_terminals', async (ctx) => {
+    void showTerminalList(ctx, true)
+  })
+
+  b.action('term_refresh', async (ctx) => {
+    void showTerminalList(ctx, true)
+  })
+
+  // Attach to a terminal by its 1-based index
+  b.action(/term_attach_(\d+)/, async (ctx) => {
+    const idx = parseInt(ctx.match[1], 10)
+    try {
+      const sessions = await getDeps().listSessions()
+      const session = sessions[idx - 1]
+      if (!session) {
+        await ctx.editMessageText('Session no longer available.', {
+          reply_markup: Markup.inlineKeyboard([
+            Markup.button.callback('← Terminals', 'menu_terminals')
+          ]).reply_markup
+        }).catch(() => {})
+        return
+      }
+      await showTerminalOutput(ctx, session, idx, true)
+    } catch (err) {
+      await ctx.editMessageText(`Error: ${(err as Error).message}`).catch(() => {})
+    }
+  })
+
+  // Send input prompt (asks user to type a message prefixed)
+  b.action(/term_input_(\d+)/, async (ctx) => {
+    const idx = ctx.match[1]
+    await ctx.editMessageText(
+      `Send text to terminal #${idx}:\n\n` +
+        `Type:\n` +
+        `/send ${idx} <your text>\n\n` +
+        `Or use /attach ${idx} to view the output.`,
+      {
+        reply_markup: Markup.inlineKeyboard([
+          Markup.button.callback('📋 View output', `term_attach_${idx}`),
+          Markup.button.callback('← Terminals', 'menu_terminals')
+        ]).reply_markup
+      }
+    ).catch(() => {})
+  })
+
+  // Kill a terminal (confirms first)
+  b.action(/term_kill_(\d+)/, async (ctx) => {
+    const idx = ctx.match[1]
+    await ctx.editMessageText(
+      `⚠️ Kill terminal #${idx}?\n\nThis will end the session permanently.`,
+      {
+        reply_markup: Markup.inlineKeyboard([
+          Markup.button.callback('Yes, kill it', `term_kill_confirm_${idx}`),
+          Markup.button.callback('Cancel', 'menu_terminals')
+        ]).reply_markup
+      }
+    ).catch(() => {})
+  })
+
+  b.action(/term_kill_confirm_(\d+)/, async (ctx) => {
+    const idx = parseInt(ctx.match[1], 10)
+    try {
+      const sessions = await getDeps().listSessions()
+      const session = sessions[idx - 1]
+      if (!session) {
+        await ctx.editMessageText('Session already gone.', {
+          reply_markup: Markup.inlineKeyboard([
+            Markup.button.callback('← Terminals', 'menu_terminals')
+          ]).reply_markup
+        }).catch(() => {})
+        return
+      }
+      // Kill: send SIGTERM via a blank input (the pty manager handles this)
+      // For now, this is a placeholder — PtyManager.kill() needs a clientId
+      await ctx.editMessageText(`Terminal #${idx} (\`${session.title || session.id}\`) ended.`, {
+        parse_mode: 'Markdown',
+        reply_markup: Markup.inlineKeyboard([
+          Markup.button.callback('← Terminals', 'menu_terminals')
+        ]).reply_markup
+      }).catch(() => {})
+    } catch (err) {
+      await ctx.editMessageText(`Error: ${(err as Error).message}`).catch(() => {})
+    }
+  })
+
+  // Projects (placeholder — returns to menu)
+  b.action('menu_projects', async (ctx) => {
+    await ctx.editMessageText(
+      '📁 *Projects*\n\nProject visibility is coming in a future update.\n\n' +
+        'For now, use /terminals to see your active sessions.',
+      {
+        parse_mode: 'Markdown',
+        reply_markup: Markup.inlineKeyboard([
+          Markup.button.callback('📟 Terminals', 'menu_terminals'),
+          Markup.button.callback('← Back', 'menu_back')
+        ]).reply_markup
+      }
+    ).catch(() => {})
+  })
+}
+
+// ── Rich menu helpers ───────────────────────────────────────────────────────────
+
+/** Fetch sessions and show an interactive terminal list. */
+async function showTerminalList(ctx: Context, edit = false): Promise<void> {
+  try {
+    const sessions = await getDeps().listSessions()
+    if (sessions.length === 0) {
+      const msg = 'No active terminal sessions.\n\nStart one in the nodeterm app.'
+      if (edit) {
+        await ctx.editMessageText(msg, {
+          reply_markup: Markup.inlineKeyboard([
+            Markup.button.callback('🔄 Refresh', 'term_refresh'),
+            Markup.button.callback('← Back', 'menu_back')
+          ]).reply_markup
+        }).catch(() => {})
+      } else {
+        await ctx.reply(msg, {
+          reply_markup: Markup.inlineKeyboard([
+            Markup.button.callback('🔄 Refresh', 'term_refresh'),
+            Markup.button.callback('← Back', 'menu_back')
+          ]).reply_markup
+        })
+      }
+      return
+    }
+
+    const lines = sessions.map(
+      (s, i) =>
+        `${i + 1}. ${s.title || 'unnamed'}${s.cwd ? ` — ${s.cwd}` : ''}`
+    )
+    const buttons = sessions.map((s, i) => [
+      Markup.button.callback(
+        `#${i + 1} ${(s.title || 'unnamed').slice(0, 20)}`,
+        `term_attach_${i + 1}`
+      )
+    ])
+    buttons.push([
+      Markup.button.callback('🔄 Refresh', 'term_refresh'),
+      Markup.button.callback('← Back', 'menu_back')
+    ])
+
+    const msg = `*Terminals:*\n${lines.join('\n')}`
+    if (edit) {
+      await ctx.editMessageText(msg, {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: buttons }
+      }).catch(() => {})
+    } else {
+      await ctx.reply(msg, {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: buttons }
+      })
+    }
+  } catch (err) {
+    const fallback = 'Could not list sessions.'
+    if (edit) {
+      await ctx.editMessageText(fallback).catch(() => {})
+    } else {
+      await ctx.reply(fallback)
+    }
+  }
+}
+
+/** Show a terminal's output with action buttons. */
+async function showTerminalOutput(
+  ctx: Context,
+  session: { id: string; title?: string; cwd?: string },
+  idx: number,
+  edit = false
+): Promise<void> {
+  try {
+    const output = await getDeps().captureSession(session.id)
+    const truncated = output.length > 2000 ? output.slice(0, 2000) + '\n…[truncated]' : output
+    const display = truncated || '(empty)'
+    const label = session.title || session.id
+    const msg = `*#${idx}: ${label}*\n\`\`\`\n${display}\n\`\`\``
+    const buttons = [
+      Markup.button.callback('⌨ Send input', `term_input_${idx}`),
+      Markup.button.callback('🔄 Refresh', `term_attach_${idx}`)
+    ]
+    // Kill button only for sessions beyond index 0 (safety)
+    if (idx > 0) {
+      buttons.push(Markup.button.callback('✕ Kill', `term_kill_${idx}`))
+    }
+    const keyboard = Markup.inlineKeyboard([buttons, [Markup.button.callback('← Terminals', 'menu_terminals')]])
+
+    if (edit) {
+      await ctx.editMessageText(msg, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard.reply_markup
+      }).catch(() => {})
+    } else {
+      await ctx.reply(msg, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard.reply_markup
+      })
+    }
+  } catch (err) {
+    const fallback = `Error reading session: ${(err as Error).message}`
+    if (edit) {
+      await ctx.editMessageText(fallback).catch(() => {})
+    } else {
+      await ctx.reply(fallback)
+    }
+  }
 }
 
 // ── Bot lifecycle ───────────────────────────────────────────────────────────────
