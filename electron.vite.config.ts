@@ -15,6 +15,13 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/main/index.ts') },
+        // 'electron' is a devDependency, so externalizeDepsPlugin (which reads
+        // dependencies) does not externalize it — and the npm wrapper at
+        // node_modules/electron/index.js gets bundled in, causing the app to
+        // try downloading Electron at runtime instead of using the built-in
+        // module. node-pty is a native module whose internal require() calls
+        // use relative paths that break when bundled. List both explicitly.
+        external: ['electron', /^node-pty/, 'node-pty'],
         output: {
           // Force CJS output (.js) — electron-vite v5 defaults to ESM (.mjs), but asar-packaged
           // Electron apps need CJS for the main process entry point to work inside the archive.
@@ -34,6 +41,7 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/preload/index.ts') },
+        external: ['electron'],
         output: {
           // Same CJS requirement for the preload script inside asar.
           format: 'cjs',

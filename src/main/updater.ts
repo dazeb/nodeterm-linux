@@ -6,12 +6,10 @@
 // of the build-time electron-builder publish config. The package.json publish block is kept
 // in sync as a fallback for electron-builder's own build metadata.
 import { app, ipcMain, Notification } from 'electron'
-import electronUpdater from 'electron-updater'
+import { autoUpdater } from 'electron-updater'
 import { IPC } from '../shared/ipc'
 import { getMainWindow, sendToMain } from './main-window'
 import { retainUntilDismissed } from './notifications'
-
-const { autoUpdater } = electronUpdater
 
 /** GitHub owner/repo for this fork. */
 const GH_OWNER = 'dazeb'

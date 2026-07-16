@@ -158,6 +158,49 @@ npm run server:dev # build + run the browser Server Edition (needs Node 22+)
 See [`CLAUDE.md`](./CLAUDE.md) for the full design notes and gotchas, and
 [`docs/SERVER.md`](./docs/SERVER.md) for the Server Edition.
 
+## 📋 Changelog
+
+### v0.4.1 — Fix app refusing to launch (electron + node-pty bundling)
+
+The v0.4.0 release was broken on Linux: the app crashed immediately on launch
+with "Electron failed to install correctly" or a blank window. Three compounding
+build-config bugs in the electron-vite config caused this:
+
+- **`electron` was bundled into the main process output** instead of being kept
+  external. Because `electron` is a `devDependency`, the `externalizeDepsPlugin`
+  (which reads `dependencies`) didn't externalize it — so the npm install wrapper
+  (`node_modules/electron/index.js`) got inlined, and at runtime the app tried to
+  *download* Electron instead of using the built-in module.
+  **Fix:** explicitly add `electron` to the rollup `external` list.
+- **`node-pty`'s internal library was bundled** even though it's a runtime
+  dependency. Its native-module loader uses relative paths that resolve against
+  its own package directory at runtime; bundling broke those paths, causing
+  "Cannot find module pty.node" at startup.
+  **Fix:** explicitly add `node-pty` (string + regex) to `external`.
+- **`electron-updater`'s default import was undefined** under CJS interop. The
+  `import electronUpdater from 'electron-updater'` + destructure pattern
+  produced `undefined` when rollup wrapped the CJS module.
+  **Fix:** switch to a named import: `import { autoUpdater } from 'electron-updater'`.
+
+Verified: the production build now launches successfully (main process, GPU,
+network, and renderer all spawn), with only a harmless WebGL2 blocklist warning
+on headless/WSL environments.
+
+### v0.4.0 — Linux release workflow + CJS output
+
+- Switched automatic updates from upstream `nodeterm.dev` to GitHub Releases.
+- Updated the release workflow to build Linux (AppImage + .deb) artifacts.
+- Forced CJS output (`.js`) in the electron-vite config for asar compatibility.
+- Fixed the `main` entry in `package.json` (`index.js` → `index.mjs`, then back).
+
+### v0.3.0 — Initial Linux port
+
+- Forked from [eneskirca/nodeterm](https://github.com/eneskirca/nodeterm) (macOS).
+- Renamed product/appId to `nodeterm-linux`, bumped version.
+- All Pro/subscription features unlocked — no license keys, no paywalls.
+- Keyboard shortcuts use Ctrl instead of ⌘.
+- Telegram bot integration replacing macOS phone pairing.
+
 ## 🤝 Contributing
 
 This is a Linux port maintained by [dazeb](https://github.com/dazeb). The upstream
