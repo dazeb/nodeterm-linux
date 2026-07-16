@@ -27,7 +27,7 @@
     "dist": "npm run make-icon && electron-vite build && electron-builder --mac --arm64 -c.mac.identity=null -c.mac.notarize=false",
     "dist:linux": "npm run make-icon && electron-vite build && electron-builder --linux",
     "release": "npm run make-icon && electron-vite build && sh -c 'electron-builder --mac --arm64 --x64 --publish never; s=$?; npm run rebuild; exit $s'",
-    "release:linux": "npm run make-icon && electron-vite build && electron-builder --linux --publish never",
+    "release:linux": "npm version patch && npm run make-icon && electron-vite build && electron-builder --linux --publish never",
     "postinstall": "electron-rebuild -f -w node-pty"
   },
   "build": {
