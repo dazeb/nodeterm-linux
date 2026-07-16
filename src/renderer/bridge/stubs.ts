@@ -307,10 +307,15 @@ export function buildStubApi(): Omit<
     onAgentControl: noopUnsub,
     sendAgentControlResult: noop,
     telegram: {
-      start: () => Promise.resolve({ running: false, botUsername: null, error: null }),
-      stop: () => Promise.resolve({ running: false, botUsername: null, error: null }),
-      getStatus: () => Promise.resolve({ running: false, botUsername: null, error: null }),
-      onStatusChange: () => noop
+      start: () => Promise.resolve({ running: false, botUsername: null, error: null, approvedUserCount: 0 }),
+      stop: () => Promise.resolve({ running: false, botUsername: null, error: null, approvedUserCount: 0 }),
+      getStatus: () => Promise.resolve({ running: false, botUsername: null, error: null, approvedUserCount: 0 }),
+      onStatusChange: () => noop,
+      onPairingCode: () => noop,
+      acceptPairing: pnoop,
+      rejectPairing: pnoop,
+      getApprovedUsers: () => Promise.resolve([]),
+      revokeUser: () => Promise.resolve()
     }
   } satisfies Omit<
     NodeTerminalApi,

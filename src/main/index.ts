@@ -1017,6 +1017,8 @@ app.whenReady().then(async () => {
   initClaudeUsage(win)
   initTelemetry(() => settingsStore.get())
   // Telegram bot for remote terminal access (optional — requires a bot token).
+  // inviteTeammate is wired lazily after initRelayHost (below) registers its IPC handler.
+  let relayInvite: ((opts: { email?: string }) => Promise<{ offer: string; id: string }>) | undefined
   initTelegramBot({
     listSessions: async () => {
       const ids = await ptyManager.listNodetermSessions().catch(() => [])
@@ -1030,6 +1032,10 @@ app.whenReady().then(async () => {
     sendInput: (sessionId, text) => {
       ptyManager.write(null, sessionId, text)
       return Promise.resolve()
+    },
+    inviteTeammate: (opts) => {
+      if (!relayInvite) throw new Error('Relay host not yet initialized')
+      return relayInvite(opts)
     }
   })
   // Declared before initLicense so its onChange hook can re-reconcile the standing host once the
@@ -1045,7 +1051,11 @@ app.whenReady().then(async () => {
   // CorePlatform client of this desktop after mutual SAS approval. Runs BESIDE initRemoteHost (the
   // phone still uses the legacy flow). Inert until `relay:host:start` — a solo user pays nothing.
   // Revocation reaches its sessions via `killRelayHostsByPeerKey` (peerRevoker, above).
-  initRelayHost(win, corePlatform, {})
+  // Wire the lazily-constructed invite function into the telegram bot's deps so /invite works.
+  {
+    const relayHost = initRelayHost(win, corePlatform, {})
+    relayInvite = (opts) => relayHost.invite(opts)
+  }
   // Standing (phone) relay host: keep a host connection registered so a paired phone can reach
   // this Mac from anywhere. Honors settings.phoneAccessEnabled + the Pro gate internally.
   standingHost = initStandingHost(win, ptyManager, () => settingsStore.get(), listProjectsOutput)

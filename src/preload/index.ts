@@ -488,7 +488,16 @@ const api: NodeTerminalApi = {
       const handler = (_e: unknown, status: Parameters<typeof listener>[0]) => listener(status)
       ipcRenderer.on(IPC.telegramBotStatus, handler)
       return () => ipcRenderer.removeListener(IPC.telegramBotStatus, handler)
-    }
+    },
+    onPairingCode: (listener) => {
+      const handler = (_e: unknown, event: Parameters<typeof listener>[0]) => listener(event)
+      ipcRenderer.on(IPC.telegramBotPairingCode, handler)
+      return () => ipcRenderer.removeListener(IPC.telegramBotPairingCode, handler)
+    },
+    acceptPairing: (code: string) => ipcRenderer.send(IPC.telegramBotPairingAccept, code),
+    rejectPairing: (code: string) => ipcRenderer.send(IPC.telegramBotPairingReject, code),
+    getApprovedUsers: () => ipcRenderer.invoke(IPC.telegramBotGetApproved),
+    revokeUser: (chatId: number) => ipcRenderer.invoke(IPC.telegramBotRevokeUser, chatId)
   }
 }
 

@@ -51,6 +51,21 @@ export function inviteShare({ offer, email }: { offer: string; email?: string })
   }
 }
 
+/** Build a Telegram deep link to share an invite via a running bot. Returns null
+ *  when the bot username is not known (bot not running). */
+export function inviteShareTelegram(
+  offer: string,
+  botUsername: string | null,
+  email?: string
+): string | null {
+  if (!botUsername) return null
+  const label = (email ?? '').trim() || 'a teammate'
+  const text =
+    `You're invited to my nodeterm session by ${label}.\n` +
+    `${SHARE_INSTRUCTION}\n${offer}`
+  return `https://t.me/${botUsername}?start=invite_${encodeURIComponent(offer)}`
+}
+
 /**
  * Map a rejected `relayHost.invite()` to the "All seats in use" UI: true when the coded seat-cap
  * error surfaces (Task 2 rejects with a message CONTAINING `E_SEATS_FULL`).

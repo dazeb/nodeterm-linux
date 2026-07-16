@@ -270,5 +270,15 @@ export const IPC = {
   // Telegram bot
   telegramBotStart: 'telegram:bot:start',
   telegramBotStop: 'telegram:bot:stop',
-  telegramBotStatus: 'telegram:bot:status'
+  telegramBotStatus: 'telegram:bot:status',
+  /** Broadcast when the bot generates a pairing code that needs desktop approval. */
+  telegramBotPairingCode: 'telegram:bot:pairing:code',
+  /** Renderer → main: accept a pending pairing code. */
+  telegramBotPairingAccept: 'telegram:bot:pairing:accept',
+  /** Renderer → main: reject a pending pairing code. */
+  telegramBotPairingReject: 'telegram:bot:pairing:reject',
+  /** Renderer → main: list approved Telegram users. */
+  telegramBotGetApproved: 'telegram:bot:get-approved',
+  /** Renderer → main: revoke an approved Telegram user. */
+  telegramBotRevokeUser: 'telegram:bot:revoke'
 } as const

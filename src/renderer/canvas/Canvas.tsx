@@ -92,6 +92,7 @@ import { Facepile } from '../components/Facepile'
 import { PresenceNamePrompt } from '../components/PresenceNamePrompt'
 import { nodeTravel, projectTravel } from '../lib/presenceTravel'
 import { RemoteAccessDialog } from '../components/RemoteAccessDialog'
+import { TelegramPairingDialog } from '../components/TelegramPairingDialog'
 import { SshProjectDialog } from '../components/SshProjectDialog'
 import { transport } from '../terminal/local-transport'
 import { sshFs } from '../terminal/ssh-fs'
@@ -5716,6 +5717,8 @@ export function Canvas() {
       </div>
 
       {remoteDialogOpen && <RemoteAccessDialog onClose={() => setRemoteDialogOpen(false)} />}
+
+      <TelegramPairingDialog />
 
       {sshDialogOpen && (
         <SshProjectDialog

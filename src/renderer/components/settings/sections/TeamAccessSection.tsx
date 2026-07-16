@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useEntitlement } from '../../../state/entitlement'
 import { useTeamAccess } from '../../../state/teamAccess'
+import { useTelegramBot } from '../../../state/telegramBot'
 import { listSeats, usedCount, type SeatEntry } from '../../../state/teamAccessCore'
-import { inviteShare, seatFullMessage, teamAccessView } from '../teamAccessView'
+import { inviteShare, inviteShareTelegram, seatFullMessage, teamAccessView } from '../teamAccessView'
 import { SettingsSection } from '../SettingsSection'
 import { SearchableRow } from '../SearchableRow'
 import { FieldRow } from '../FieldRow'
@@ -52,6 +53,9 @@ export function TeamAccessSection({
   const [busy, setBusy] = useState(false)
   const [atCap, setAtCap] = useState(false)
   const [error, setError] = useState('')
+
+  // Check if the Telegram bot is running (for the "Send via Telegram" button)
+  const botUsername = useTelegramBot((s) => s.status.botUsername)
 
   const generateInvite = async () => {
     setError('')
@@ -168,12 +172,27 @@ export function TeamAccessSection({
                       />
                     }
                   />
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     <CopyButton text={share.copyText} label="Copy" />
                     <Button onClick={() => window.nodeTerminal.shell.openExternal(share.mailtoUrl)}>
                       Open in Mail
                     </Button>
+                    {botUsername ? (
+                      <Button
+                        onClick={() => {
+                          const tgLink = inviteShareTelegram(offer, botUsername, offerEmail)
+                          if (tgLink) window.nodeTerminal.shell.openExternal(tgLink)
+                        }}
+                      >
+                        Send via Telegram
+                      </Button>
+                    ) : null}
                   </div>
+                  {botUsername ? (
+                    <p className="text-xs text-muted">
+                      Or share via Telegram — the bot @{botUsername} will deliver the invite code.
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
             </div>

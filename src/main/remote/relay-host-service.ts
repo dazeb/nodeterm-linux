@@ -70,6 +70,9 @@ export interface AddSeatOptions {
 export interface RelayHost {
   /** Tear down EVERY listener / bridged peer in the pool (app quit). Idempotent. */
   stop(): void
+  /** Generate a Team Access invite and return the pairing offer + seat id.
+   *  Cap-checked against licensedSeats; rejects E_SEATS_FULL when full. */
+  invite(opts?: AddSeatOptions): Promise<{ offer: string; id: string }>
 }
 
 /**
@@ -253,5 +256,5 @@ export function initRelayHost(
     stop()
   })
 
-  return { stop }
+  return { stop, invite: addSeat }
 }
