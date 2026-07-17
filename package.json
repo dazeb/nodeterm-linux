@@ -44,6 +44,12 @@
     "asarUnpack": [
       "**/node_modules/node-pty/**"
     ],
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
+    ],
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.png",

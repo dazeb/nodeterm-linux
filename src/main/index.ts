@@ -250,6 +250,15 @@ if (process.platform !== 'win32' && typeof process.setFdLimit === 'function') {
 }
 
 function createWindow(): BrowserWindow {
+  // On Linux the window/taskbar icon isn't supplied by an app bundle (unlike mac),
+  // so set it explicitly from the bundled png. Skipped on mac/win where it would do
+  // nothing useful and could clobber the bundled .icns.
+  const linuxIcon =
+    process.platform === 'linux'
+      ? app.isPackaged
+        ? join(process.resourcesPath, 'icon.png')
+        : join(__dirname, '../../build/icon.png')
+      : undefined
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -259,6 +268,7 @@ function createWindow(): BrowserWindow {
     // Integrate the macOS traffic lights into our top bar (modern Mac app look).
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 15 },
+    ...(linuxIcon ? { icon: linuxIcon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
