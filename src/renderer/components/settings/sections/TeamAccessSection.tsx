@@ -157,12 +157,12 @@ export function TeamAccessSection({
               {offer && share ? (
                 <div className="space-y-2">
                   <p className="text-sm text-muted">
-                    Share this single-use pairing code with{' '}
+                    Share this single-use invite link with{' '}
                     <strong className="text-text">{offerEmail || 'your teammate'}</strong> — they
-                    paste it in nodeterm → New Remote Connection:
+                    open it in nodeterm:
                   </p>
                   <FieldRow
-                    label="Pairing code"
+                      label="Invite link"
                     control={
                       <Input
                         className="w-72"
@@ -173,7 +173,7 @@ export function TeamAccessSection({
                     }
                   />
                   <div className="flex gap-2 flex-wrap">
-                    <CopyButton text={share.copyText} label="Copy" />
+                    <CopyButton text={share.copyText} label="Copy invite link" />
                     <Button onClick={() => window.nodeTerminal.shell.openExternal(share.mailtoUrl)}>
                       Open in Mail
                     </Button>

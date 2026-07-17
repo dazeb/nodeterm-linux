@@ -7,6 +7,7 @@ import type {
   Project,
   PtyCreateOptions,
   RecycledInfo,
+  RemoteInvite,
   RelayPeerPending,
   UpdateInfo,
   UpdateProgress,
@@ -35,6 +36,25 @@ function subscribe<A extends unknown[] = []>(channel: string) {
       }
     }
   }
+}
+
+// An OS deep link can arrive as soon as did-finish-load, before React mounts
+// Canvas and calls remoteInvites.onReceived. Preload runs first, so it keeps a
+// short in-memory queue and fans later events directly to active subscribers.
+const pendingRemoteInvites: RemoteInvite[] = []
+const remoteInviteListeners = new Set<(invite: RemoteInvite) => void>()
+ipcRenderer.on(IPC.remoteInviteReceived, (_e, invite: RemoteInvite) => {
+  if (remoteInviteListeners.size === 0) {
+    pendingRemoteInvites.push(invite)
+    return
+  }
+  remoteInviteListeners.forEach((listener) => listener(invite))
+})
+
+function subscribeRemoteInvites(listener: (invite: RemoteInvite) => void): () => void {
+  remoteInviteListeners.add(listener)
+  for (const invite of pendingRemoteInvites.splice(0)) listener(invite)
+  return () => remoteInviteListeners.delete(listener)
 }
 
 // Fan-out subscriber for the host's inbound apply-mutation events (a single ipcRenderer
@@ -405,6 +425,9 @@ const api: NodeTerminalApi = {
       return () => ipcRenderer.removeListener(channel, handler)
     },
     disconnect: (connectionId) => ipcRenderer.send(IPC.relayClientDisconnect, connectionId)
+  },
+  remoteInvites: {
+    onReceived: subscribeRemoteInvites
   },
   handoff: {
     build: (sessionId, agentId, sourceNodeId, cwd, accountId) =>

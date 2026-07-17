@@ -455,7 +455,14 @@ made the **host listener** multi-peer and packaged it.
   CTA; premium → `Used X / N` (X = pending+connected, matching the cap), the connected-device list
   (email label + **Remove** → revoke), and **Invite** (email → `{offer, id}` → a pending row +
   Copy / Open-in-Mail share; the email is a display LABEL only, never trust). A renderer store
-  (`state/teamAccess.ts`) tracks seats off the `relay:host:peer-pending/open/closed` events.
+   (`state/teamAccess.ts`) tracks seats off the `relay:host:peer-pending/open/closed` events.
+- **Desktop invite links.** Offers are shareable `nodeterm://pair?code=…` links. A Linux desktop
+  package registers the `nodeterm` protocol; opening a valid link starts the recipient app (or
+  focuses it), then shows **Join remote team?** with the relay endpoint and a shortened host key.
+  The recipient must choose **Connect**, compare the SAS, and wait for host approval before the
+  relay becomes usable. A malformed, expired, or consumed link never starts a connection. Server
+  Edition browsers and the mobile companion do not receive OS protocol links in v1; they keep the
+  manual offer path.
 - **Backend contract (separate repo, api.nodeterm.dev):** the `seats` signer (Stripe per-seat
   subscription → webhook → the Ed25519 payload), optional real email delivery of invites (v1 the app
   generates + the user shares), and v2 server-side seat enforcement. Documented, not built here.

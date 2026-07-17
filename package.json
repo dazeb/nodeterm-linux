@@ -50,6 +50,14 @@
         "to": "icon.png"
       }
     ],
+    "protocols": [
+      {
+        "name": "nodeterm remote invite",
+        "schemes": [
+          "nodeterm"
+        ]
+      }
+    ],
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.png",

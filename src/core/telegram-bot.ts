@@ -48,6 +48,7 @@ import {
   getTelegramBotId,
   type TelegramBotInfoStore
 } from './telegram-bot-info'
+import { telegramBotCommands, telegramMenuButton } from './telegram-commands'
 
 export interface TelegramSessionInfo {
   /** The node id (= persistKey). This is what captureSession/sendInput expect, NOT the tmux name. */
@@ -74,6 +75,13 @@ export interface TelegramProjectInfo {
   closed?: boolean
 }
 
+/** Private main-process storage for the bot token. It is deliberately not an
+ *  IPC API: the token never reaches the renderer after the initial entry. */
+export interface TelegramBotTokenStorage {
+  load(): Promise<string | null>
+  save(token: string): Promise<void>
+}
+
 export interface TelegramBotDeps {
   /** List every terminal node across all projects, with project + agent metadata. */
   listSessions(): Promise<TelegramSessionInfo[]>
@@ -84,6 +92,8 @@ export interface TelegramBotDeps {
   /** Send text to a session. `sessionId` is the node id (persistKey). Returns false when
    *  the session is gone / tmux unavailable. Implementations add Enter themselves. */
   sendInput(sessionId: string, text: string): Promise<boolean>
+  /** Encrypted persistent token storage supplied by the current shell. */
+  tokenStorage?: TelegramBotTokenStorage
   /**
    * Generate a Team Access invite via the relay host. Returns a pairing offer
    * the bot can forward to the user. Undefined when Pro is not available.
@@ -837,6 +847,14 @@ async function startBot(
 
   try {
     await bot.launch()
+    // Telegraf's b.start() handles incoming /start, but Telegram only exposes it
+    // in the client's slash-command menu after this separate Bot API call.
+    try {
+      await bot.telegram.setMyCommands(telegramBotCommands)
+      await bot.telegram.setChatMenuButton({ menuButton: telegramMenuButton })
+    } catch (err) {
+      console.warn('[telegram] could not register bot command menu:', err)
+    }
     // Wait briefly for bot info to populate
     await new Promise((r) => setTimeout(r, 500))
     botStatus = {
@@ -892,7 +910,10 @@ export function initTelegramBot(
   token?: string
 ): void {
   deps = tdeps
-  const botToken = token || process.env.NODETERM_TELEGRAM_BOT_TOKEN || ''
+  // An environment token intentionally takes precedence for managed / headless
+  // deployments. A manually-entered token is retained only in the shell-owned
+  // encrypted store, never in renderer settings or an IPC response.
+  let configuredToken = token || process.env.NODETERM_TELEGRAM_BOT_TOKEN || ''
   // Persisted at <userData>/telegram-approved.json
   const filePath = path.join(platform().userDataDir, 'telegram-approved.json')
   // Bot identity (numeric id + username) persisted at <userData>/telegram-bot-info.json
@@ -900,8 +921,44 @@ export function initTelegramBot(
 
   // ── Renderer → main: start / stop / status ──
 
+  const markTokenLoadError = (err: unknown): void => {
+    botStatus = {
+      ...botStatus,
+      running: false,
+      botUsername: null,
+      error: err instanceof Error ? err.message : String(err)
+    }
+    broadcast()
+  }
+
+  const loadStoredToken = async (): Promise<string> => {
+    if (configuredToken) return configuredToken
+    const stored = await tdeps.tokenStorage?.load()
+    configuredToken = stored?.trim() ?? ''
+    return configuredToken
+  }
+
   platform().handle(IPC.telegramBotStart, async (tkn?: string) => {
-    await startBot(tkn || botToken, filePath, infoFilePath)
+    const submitted = typeof tkn === 'string' ? tkn.trim() : ''
+    try {
+      const activeToken = submitted || await loadStoredToken()
+      if (!activeToken) {
+        botStatus = { ...botStatus, running: false, botUsername: null, error: null }
+        broadcast()
+        return botStatus
+      }
+      await startBot(activeToken, filePath, infoFilePath)
+      // Do not retain a bad token: only save the value the bot launched with
+      // successfully. Failure to persist leaves this run working and is logged.
+      if (submitted && tdeps.tokenStorage && botStatus.running) {
+        configuredToken = submitted
+        await tdeps.tokenStorage.save(submitted).catch((err) => {
+          console.warn('[telegram] could not save bot token:', err)
+        })
+      }
+    } catch (err) {
+      markTokenLoadError(err)
+    }
     return botStatus
   })
 
@@ -966,6 +1023,11 @@ export function initTelegramBot(
     await persistApproved()
   })
 
-  // Auto-start if token is available from env
-  if (botToken) void startBot(botToken, filePath, infoFilePath)
+  // Auto-start from the environment or the encrypted token entered in Settings.
+  // This makes paired users survive app restarts and keeps the Settings status live.
+  void loadStoredToken()
+    .then((storedToken) => {
+      if (storedToken) return startBot(storedToken, filePath, infoFilePath)
+    })
+    .catch(markTokenLoadError)
 }

@@ -92,6 +92,7 @@ import { Facepile } from '../components/Facepile'
 import { PresenceNamePrompt } from '../components/PresenceNamePrompt'
 import { nodeTravel, projectTravel } from '../lib/presenceTravel'
 import { RemoteAccessDialog } from '../components/RemoteAccessDialog'
+import { RemoteInviteDialog } from '../components/RemoteInviteDialog'
 import { TelegramPairingDialog } from '../components/TelegramPairingDialog'
 import { SshProjectDialog } from '../components/SshProjectDialog'
 import { transport } from '../terminal/local-transport'
@@ -99,6 +100,13 @@ import { sshFs } from '../terminal/ssh-fs'
 import { prepareQuickOpenFiles, type QuickOpenIndexedFile } from '../lib/quickOpenSearch'
 import { opensInEditor } from '../lib/openTarget'
 import { newEntryPath, parentDir } from '../lib/explorerCreate'
+import {
+  acceptReplacement,
+  clearInvite,
+  dismissReplacement,
+  emptyInviteState,
+  receiveInvite
+} from '../lib/remoteInvite'
 import { useProjects } from '../state/projects'
 import { useAgentStatus } from '../state/agentStatus'
 import { useTeamAccessEvents } from '../state/teamAccess'
@@ -498,6 +506,7 @@ export function Canvas() {
     if (s.source === 'relay') disposeSession(s.id)
   }, [])
   const [remoteDialogOpen, setRemoteDialogOpen] = useState(false)
+  const [remoteInviteState, setRemoteInviteState] = useState(emptyInviteState)
   // "Connect over SSH…" project-creation dialog (from the Welcome screen).
   const [sshDialogOpen, setSshDialogOpen] = useState(false)
   // "Clone repository…" dialog (from the Welcome screen + command palette).
@@ -2008,6 +2017,13 @@ export function Canvas() {
     if (!offer) return
     void connectOffer(offer)
   }, [connectOffer])
+
+  // Desktop OS invite links are validated and canonicalized in main/preload.
+  // A visible confirmation is never silently retargeted: receiveInvite records
+  // later links as an explicit replacement for the user to choose.
+  useEffect(() => window.nodeTerminal.remoteInvites.onReceived((invite) => {
+    setRemoteInviteState((state) => receiveInvite(state, invite))
+  }), [])
 
   // Reconnect an offline (dropped) relay tab IN PLACE (Stage 4 Task 7). The relay offer is
   // single-use (main/remote/pairing.ts), so v1 has no silent/pinned reconnect — prompt for a FRESH
@@ -5717,6 +5733,16 @@ export function Canvas() {
       </div>
 
       {remoteDialogOpen && <RemoteAccessDialog onClose={() => setRemoteDialogOpen(false)} />}
+      <RemoteInviteDialog
+        state={remoteInviteState}
+        onConnect={(invite) => {
+          setRemoteInviteState(clearInvite())
+          void connectOffer(invite.offer)
+        }}
+        onCancel={() => setRemoteInviteState(clearInvite())}
+        onUseReplacement={() => setRemoteInviteState((state) => acceptReplacement(state))}
+        onKeepCurrent={() => setRemoteInviteState((state) => dismissReplacement(state))}
+      />
 
       <TelegramPairingDialog />
 

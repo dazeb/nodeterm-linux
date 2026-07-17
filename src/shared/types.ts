@@ -1257,6 +1257,18 @@ export interface RelayClientApi {
   disconnect(connectionId: string): void
 }
 
+/** A deep-link invite accepted and canonicalized by the desktop main process. */
+export interface RemoteInvite {
+  offer: string
+  relayEndpoint: string
+  hostPublicKeyB64: string
+}
+
+/** Desktop-only OS invite delivery. Server Edition browsers cannot receive OS protocol links. */
+export interface RemoteInviteApi {
+  onReceived(listener: (invite: RemoteInvite) => void): () => void
+}
+
 /** A paired device as exposed to the renderer — the bearer token is never included. */
 export interface PairedDevice {
   id: string
@@ -1340,6 +1352,7 @@ export interface NodeTerminalApi {
   remoteHost: RemoteHostApi
   relayHost: RelayHostApi
   relayClient: RelayClientApi
+  remoteInvites: RemoteInviteApi
   handoff: HandoffApi
   pairing: PairingApi
   presence: PresenceApi

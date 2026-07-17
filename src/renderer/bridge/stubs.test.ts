@@ -44,7 +44,8 @@ describe('bridge stubs', () => {
       s.relayClient.onSas('c', () => {}),
       s.relayClient.onApproved('c', () => {}),
       s.relayClient.onFrame('c', () => {}),
-      s.relayClient.onClosed('c', () => {})
+      s.relayClient.onClosed('c', () => {}),
+      s.remoteInvites.onReceived(() => {})
     ]) {
       expect(typeof un).toBe('function')
       expect(() => un()).not.toThrow()

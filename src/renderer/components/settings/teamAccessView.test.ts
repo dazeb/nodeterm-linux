@@ -24,10 +24,13 @@ describe('teamAccessView', () => {
 
 describe('inviteShare', () => {
   it('builds a mailto with the encoded code, the invitee, and a body', () => {
-    const { copyText, mailtoUrl } = inviteShare({ offer: 'ABC-123-xyz', email: 'ayse@x.com' })
-    expect(copyText).toContain('ABC-123-xyz')
+    const offer = 'nodeterm://pair?code=ABC-123-xyz'
+    const { copyText, mailtoUrl } = inviteShare({ offer, email: 'ayse@x.com' })
+    expect(copyText).toContain(offer)
+    expect(copyText).toContain('Open this invite link in nodeterm')
+    expect(copyText).not.toContain('paste this pairing code')
     expect(mailtoUrl.startsWith('mailto:ayse@x.com?')).toBe(true)
-    expect(mailtoUrl).toContain(encodeURIComponent('ABC-123-xyz'))
+    expect(mailtoUrl).toContain(encodeURIComponent(offer))
     expect(mailtoUrl).toContain('body=')
     expect(mailtoUrl).toContain('subject=')
   })

@@ -84,7 +84,7 @@ export function RemoteAccessDialog({ onClose }: { onClose: () => void }): React.
           <div className="remote-dialog__block">
             <p className="remote-dialog__hint">
               Sharing <strong>{sharedName || 'this project'}</strong> — the joiner will see this
-              project and can run commands on this machine. Share this pairing code (single use):
+               project and can run commands on this machine. Share this invite link (single use):
             </p>
             <Input
               className="w-full"
@@ -93,7 +93,7 @@ export function RemoteAccessDialog({ onClose }: { onClose: () => void }): React.
               onFocus={(e) => e.target.select()}
             />
             <div className="remote-dialog__row">
-              <CopyButton text={hostOffer} label="Copy code" />
+              <CopyButton text={hostOffer} label="Copy invite link" />
               <Button onClick={() => void stopHosting()}>Stop sharing</Button>
             </div>
           </div>
@@ -130,7 +130,7 @@ export function RemoteAccessDialog({ onClose }: { onClose: () => void }): React.
         <div className="remote-dialog__block">
           <Input
             className="w-full"
-            placeholder="paste the host's code"
+            placeholder="paste the host's invite link"
             value={clientCode}
             onChange={(e) => setClientCode(e.target.value)}
           />

@@ -2,8 +2,9 @@ import { join, resolve, posix } from 'path'
 import { readFile } from 'fs/promises'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
-import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Notification, safeStorage, shell } from 'electron'
 import { IPC } from '../shared/ipc'
+import type { RemoteInvite } from '../shared/types'
 import { registerFsHandlers } from '../core/fs-handlers'
 import { PtyManager } from '../core/pty-manager'
 import { WorkspaceStore } from '../core/workspace-store'
@@ -51,6 +52,7 @@ import { initClaudeUsage } from './claude-usage'
 import { initLicense, isPremium, getStoredEntitlement } from '../core/license'
 import { initTelegramBot } from '../core/telegram-bot'
 import type { TelegramSessionInfo } from '../core/telegram-bot'
+import { TelegramBotTokenStore } from './telegram-token-store'
 import { sessionName } from '../core/tmux-naming'
 import { initClaudeAccounts } from './claude-accounts'
 import { claudeCliCaps, registerClaudeCliIpc } from '../core/claude-cli'
@@ -86,6 +88,7 @@ import {
 import { initPlatform } from '../core/platform'
 import { electronPlatform } from './platform-electron'
 import { wirePeerRegistry } from './peer-registry'
+import { createInviteProtocol } from './invite-protocol'
 
 // Dev-only: NT_MULTI lets a SECOND instance run (host + client testing on one machine) with an
 // isolated userData via NT_USER_DATA — its own device-id/session/license/workspace. Never active
@@ -235,6 +238,14 @@ if (!gotSingleInstanceLock) {
   })
 }
 
+// The existing pairing codec already emits nodeterm://pair links. Register the
+// app as their OS handler and retain an invite until a renderer is available.
+// NT_MULTI intentionally skips registration so local two-instance tests never
+// steal the user's real protocol association.
+const inviteProtocol = gotSingleInstanceLock
+  ? createInviteProtocol(app, process.argv, { register: !NT_MULTI })
+  : null
+
 // Declare the nt-media:// scheme privileged BEFORE the app is ready (required by Electron).
 // The actual request handler is installed post-ready via initMediaProtocol().
 registerMediaScheme()
@@ -279,6 +290,26 @@ function createWindow(): BrowserWindow {
       // Enables the <webview> tag used by WebNode (embedded content stays locked down —
       // no nodeintegration is set on the webview element itself).
       webviewTag: true
+    }
+  })
+
+  // `loadURL` is below. Attach before it starts so an invite that launched the
+  // app cannot be lost before preload/renderer subscriptions are installed.
+  let rendererReady = false
+  const pendingInvites: RemoteInvite[] = []
+  const deliverInvite = (invite: RemoteInvite): void => {
+    if (win.isDestroyed()) return
+    if (!rendererReady) {
+      pendingInvites.push(invite)
+      return
+    }
+    win.webContents.send(IPC.remoteInviteReceived, invite)
+  }
+  inviteProtocol?.attach(deliverInvite)
+  win.webContents.once('did-finish-load', () => {
+    rendererReady = true
+    for (const invite of pendingInvites.splice(0)) {
+      if (!win.isDestroyed()) win.webContents.send(IPC.remoteInviteReceived, invite)
     }
   })
 
@@ -1032,6 +1063,10 @@ app.whenReady().then(async () => {
   // inviteTeammate is wired lazily after initRelayHost (below) registers its IPC handler.
   let relayInvite: ((opts: { email?: string }) => Promise<{ offer: string; id: string }>) | undefined
   initTelegramBot({
+    tokenStorage: new TelegramBotTokenStore(
+      join(app.getPath('userData'), 'telegram-bot-token.json'),
+      safeStorage
+    ),
     listSessions: async () => {
       // Drive the session list from the WORKSPACE (node id = persistKey), not from
       // tmux session names: captureSession/sendText expect the node id, and passing

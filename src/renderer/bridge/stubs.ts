@@ -275,6 +275,10 @@ export function buildStubApi(): Omit<
       onClosed: noopUnsub,
       disconnect: noop
     },
+    // OS protocol links exist only on desktop shells. A browser cannot receive them.
+    remoteInvites: {
+      onReceived: noopUnsub
+    },
     handoff: {
       build: U('handoff.build')
     },

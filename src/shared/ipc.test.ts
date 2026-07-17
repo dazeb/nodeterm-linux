@@ -47,5 +47,6 @@ describe('IPC channels', () => {
     expect(IPC.relayClientApproved('abc')).toBe('relay:client:approved:abc')
     expect(IPC.relayClientFrame('abc')).toBe('relay:client:frame:abc')
     expect(IPC.relayClientClosed('abc')).toBe('relay:client:closed:abc')
+    expect(IPC.remoteInviteReceived).toBe('remote:invite-received')
   })
 })

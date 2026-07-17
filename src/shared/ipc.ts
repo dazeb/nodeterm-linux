@@ -256,6 +256,8 @@ export const IPC = {
   relayClientApproved: (connectionId: string) => `relay:client:approved:${connectionId}`,
   relayClientFrame: (connectionId: string) => `relay:client:frame:${connectionId}`,
   relayClientClosed: (connectionId: string) => `relay:client:closed:${connectionId}`,
+  /** Desktop main → renderer: a validated nodeterm://pair invite was opened by the OS. */
+  remoteInviteReceived: 'remote:invite-received',
   handoffBuild: 'handoff:build',
   // Phone pairing (nodeterm iOS "scan a QR" flow): renderer starts/stops the one-shot LAN
   // listener; main pushes the completion result back over `pairing:done`. The per-device
