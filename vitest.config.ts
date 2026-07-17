@@ -9,6 +9,7 @@ export default defineConfig({
       'src/main/**/*.test.ts',
       'src/renderer/**/*.test.ts',
       'src/server/**/*.test.ts',
+      'src/relay-service/**/*.test.ts',
       'test/server/**/*.test.ts',
       'test/remote/**/*.test.ts'
     ],

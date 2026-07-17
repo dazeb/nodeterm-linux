@@ -19,6 +19,7 @@
     "src/preload/**/*",
     "src/shared/**/*",
     "src/core/**/*",
-    "src/server/**/*"
+    "src/server/**/*",
+    "src/relay-service/**/*"
   ]
 }
