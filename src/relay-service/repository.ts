@@ -116,6 +116,15 @@ export class RelayRepository {
     await this.pool.query('update relay_invites set closed_at = now() where id = $1 and closed_at is null', [pairingId])
   }
 
+  async accountStatus(accountId: string, maxMintsPerHour: number): Promise<{ activeSeats: number; mintsRemaining: number; resetAt: Date | null }> {
+    const [seats, mints] = await Promise.all([
+      this.pool.query<{ count: string }>('select count(*) from relay_invites where account_id = $1 and closed_at is null and expires_at > now()', [accountId]),
+      this.pool.query<{ mintedAt: Date }>("select minted_at as \"mintedAt\" from relay_invite_mints where account_id = $1 and minted_at > now() - interval '1 hour' order by minted_at asc", [accountId])
+    ])
+    const oldest = mints.rows[0]?.mintedAt ?? null
+    return { activeSeats: Number(seats.rows[0].count), mintsRemaining: Math.max(0, maxMintsPerHour - (mints.rowCount ?? 0)), resetAt: oldest ? new Date(oldest.getTime() + 3_600_000) : null }
+  }
+
   async cleanupExpired(): Promise<void> {
     await this.pool.query('update relay_invites set closed_at = now() where closed_at is null and expires_at <= now()')
     await this.pool.query('delete from relay_sessions where expires_at <= now() or revoked_at is not null')
