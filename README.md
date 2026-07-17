@@ -30,7 +30,7 @@ a stack of hidden tabs.
 
 ## Why nodeterm-linux
 
-This is a **Linux desktop port** of [nodeterm](https://github.com/eneskirca/nodeterm), originally built for macOS. The core codebase is the same — the architecture was designed with a clean platform seam (`CorePlatform`) that made the port straightforward. All features work on Linux with no subscription gating.
+This is a **Linux desktop port** of [nodeterm](https://github.com/eneskirca/nodeterm), originally built for macOS. The core codebase is the same — the architecture was designed with a clean platform seam (`CorePlatform`) that made the port straightforward. Desktop features are free on Linux; Team Access invitations are temporarily unavailable while this fork replaces the upstream license-gated relay with its own hosted service.
 
 Stacked terminal tabs hide context — you lose track of what's running where. nodeterm turns that into a **map**: every shell is a node you can place, group, label, and zoom into. Sessions are spatial and persistent, so your mental model stays intact across restarts.
 
@@ -79,6 +79,19 @@ Stacked terminal tabs hide context — you lose track of what's running where. n
 - **Telegram bot (free)** — control your terminals remotely via Telegram. List
   sessions, view output, and send commands from your phone. No relay server needed.
   Set up in Settings → Telegram with a bot token from @BotFather.
+
+### Hosted Team Access Status
+
+`v0.4.8` adds the backend foundation for a free hosted relay: GitHub Device Flow
+authentication for hosts, PostgreSQL-backed opaque host sessions, single-use
+invite quotas, and an authenticated invitation API. It does **not** yet enable
+Team Access in the desktop app. The desktop relay still uses the upstream
+entitlement endpoint, so creating a Team Access invite currently fails with
+`not_entitled`.
+
+Invitees will remain account-free. The pending desktop and WebSocket integration
+will authenticate only the host, preserve the existing end-to-end encryption and
+SAS approval flow, and enforce the free hosted limits server-side.
 
 ### 🤖 Telegram Bot — terminals on your phone
 
@@ -150,6 +163,11 @@ npm run server:dev # build + run the browser Server Edition (needs Node 22+)
 - **`TerminalTransport` abstraction** — the renderer depends only on this interface, never on
   IPC or node-pty directly. `LocalTransport` talks to the local host; `RemoteTransport` talks
   to a remote agent over SSH — so remote projects drop in without touching the canvas UI.
+- **Hosted relay foundation** — `src/relay-service` is a separate Node service for free Team
+  Access hosting. It owns GitHub Device Flow, opaque host sessions, PostgreSQL invitation
+  quotas, and token matching; it never decrypts or stores relay frames. The Electron client and
+  WebSocket relay wiring are still in progress, so this service is not yet deployed or used by
+  released desktop builds.
 - **React Flow is the single source of truth** for live nodes; projects persist serialized
   nodes to disk, and tmux keeps sessions alive across restarts.
 - **Three surfaces** — the desktop app, the browser **Server Edition**, and an in-progress
@@ -159,6 +177,16 @@ See [`CLAUDE.md`](./CLAUDE.md) for the full design notes and gotchas, and
 [`docs/SERVER.md`](./docs/SERVER.md) for the Server Edition.
 
 ## 📋 Changelog
+
+### v0.4.8 — Hosted relay foundation
+
+- Added a standalone hosted-relay service foundation with validated deployment configuration.
+- Added PostgreSQL-backed GitHub host accounts, opaque host sessions, invitation expiry, atomic
+  claims, a five-seat limit, and a 20-invite-per-hour limit.
+- Added GitHub Device Flow and authenticated HTTP endpoints for host sign-in, status, sign-out,
+  and invitation minting.
+- Team Access is not enabled by this release: its Electron and WebSocket protocol integration is
+  still required before the service can replace the upstream entitlement-gated pairing endpoint.
 
 ### v0.4.1 — Fix app refusing to launch (electron + node-pty bundling)
 
