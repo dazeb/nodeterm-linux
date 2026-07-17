@@ -1,6 +1,6 @@
 {
   "name": "node-terminal",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "description": "nodeterm Linux port — node-based terminal manager on an infinite canvas, ported from macOS to Linux.",
   "author": {
     "name": "dazeb",
