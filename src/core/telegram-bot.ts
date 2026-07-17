@@ -131,6 +131,18 @@ function getDeps(): TelegramBotDeps {
   return deps
 }
 
+/** Proactively message a Telegram chat after the user has sent /start or /pair.
+ *  No-op when the bot is not running; Telegram rejects messages to chats that
+ *  have never initiated a conversation with the bot. */
+async function telegramNotify(chatId: number, text: string): Promise<void> {
+  if (!bot) return
+  try {
+    await bot.telegram.sendMessage(chatId, text, { parse_mode: 'Markdown' })
+  } catch (err) {
+    console.warn('[telegram] proactive notify failed:', err)
+  }
+}
+
 /** Load the approved users file from disk. Returns empty store if absent/malformed. */
 async function loadApprovedFromDisk(filePath: string): Promise<TelegramApprovedStore> {
   try {
@@ -913,15 +925,30 @@ export function initTelegramBot(
     const req = claimPairingCode(pendingPairings, code)
     if (!req) return
     approvedStore = pinTelegramUser(approvedStore, req.chatId, req.name)
+    // Only promise access after it has been durably recorded. The bot instance is
+    // module-scoped and /pair has already established that Telegram may receive it.
     void persistApproved()
-    // Notify the Telegram user they're approved
-    // (We can't send a proactive message without storing the bot instance — it's fine,
-    //  the user can /status to check, or the desktop can relay through the bot later.)
+      .then(() => telegramNotify(
+        req.chatId,
+        `✅ *Pairing approved!*\n\nYou can now use:\n` +
+          `/terminals — list sessions\n` +
+          `/attach N — view terminal N output\n` +
+          `/send N <text> — send text to terminal N\n` +
+          `/projects — list projects`
+      ))
+      .catch((err) => console.warn('[telegram] could not persist pairing approval:', err))
   })
 
   // Reject a pending pairing code
   platform().on(IPC.telegramBotPairingReject, (code: string) => {
+    const req = pendingPairings.get(code)
     pendingPairings.delete(code)
+    if (req) {
+      void telegramNotify(
+        req.chatId,
+        `❌ Your pairing request was declined.\n\nAsk the machine owner to re-issue a code, or send /pair again.`
+      )
+    }
   })
 
   // ── Renderer → main: approved user management ──
