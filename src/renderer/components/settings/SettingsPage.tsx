@@ -12,6 +12,7 @@ import { TelegramSection } from './sections/TelegramSection'
 import { AgentsSection } from './sections/AgentsSection'
 import { AccountsSection } from './sections/AccountsSection'
 import { CustomAgentsSection } from './sections/CustomAgentsSection'
+import { ChatModelsSection } from './sections/ChatModelsSection'
 import { NotificationsSection } from './sections/NotificationsSection'
 import { CommitSection } from './sections/CommitSection'
 import { TmuxSection } from './sections/TmuxSection'
@@ -70,6 +71,7 @@ export function SettingsPage({
             <AgentsSection isActive={active === 'agents'} />
             <AccountsSection isActive={active === 'accounts'} />
             <CustomAgentsSection isActive={active === 'custom-agents'} />
+            <ChatModelsSection isActive={active === 'chat-models'} />
             <NotificationsSection isActive={active === 'notifications'} />
             <CommitSection isActive={active === 'commit'} />
             <TmuxSection isActive={active === 'tmux'} />

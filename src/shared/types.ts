@@ -440,6 +440,19 @@ export interface ClaudeAccount {
   createdAt: number
 }
 
+/** A configurable LLM provider/model for chat nodes (fork: replace Claude-only chat). */
+export interface ChatModelConfig {
+  id: string
+  /** Display label in the UI (e.g. "GPT-4o", "DeepSeek V4"). */
+  label: string
+  /** Provider base URL (e.g. "https://api.openai.com/v1"). Must end in /v1. */
+  baseUrl: string
+  /** Model name sent in the API request (e.g. "gpt-4o", "deepseek-chat"). */
+  model: string
+  /** API key (plaintext or env-var reference like $MY_KEY). */
+  apiKey: string
+}
+
 /** User-configurable application settings (settings.json). */
 export interface Settings {
   fontSize: number
@@ -482,6 +495,8 @@ export interface Settings {
   systemAccountLabel: string
   /** Agent ids hidden from the Add menus. */
   disabledAgents: AgentId[]
+  /** LLM model configs for chat nodes (fork: replaces hardcoded Claude). */
+  chatModels: ChatModelConfig[]
   /** Which agent the ⌘⇧C shortcut / quick-add launches. Always a launchable builtin. */
   defaultAgent: AgentId
   /** The permission mode Claude TERMINAL (CLI) sessions START in — passed as `--permission-mode`
@@ -523,6 +538,7 @@ export const DEFAULT_SETTINGS: Settings = {
   // All three builtin agents (Claude/Codex/Gemini) show in the Add menus out of the box.
   // Existing users keep whatever they've saved (their persisted disabledAgents overrides this).
   disabledAgents: [],
+  chatModels: [],
   defaultAgent: 'claude',
   // Sessions start in auto mode out of the box. Existing users pick this up on hydrate
   // (settings hydrate merges over DEFAULT_SETTINGS) — a deliberate behavior change.
@@ -979,7 +995,7 @@ export interface ChatApi {
   /** Start (or reattach) the driver for a node. fork=true resumes by forking (terminal takeover). */
   ensure(
     nodeId: string,
-    opts: { cwd?: string; sessionId?: string; fork?: boolean; accountId?: string }
+    opts: { cwd?: string; sessionId?: string; fork?: boolean; accountId?: string; modelId?: string }
   ): Promise<{ ok: boolean; error?: string }>
   send(nodeId: string, text: string, images?: ChatImageAttachment[]): void
   interrupt(nodeId: string): void
@@ -1191,6 +1207,12 @@ export interface RelayPeerPending {
  * the Server Edition browser build degrades every member to `E_UNSUPPORTED`/no-op.
  */
 export interface RelayHostApi {
+  auth: {
+    begin(): Promise<{ deviceCode: string; userCode: string; verificationUri: string; expiresIn: number; interval: number }>
+    poll(deviceCode: string): Promise<{ status: 'pending' } | { signedIn: true; githubLogin: string; expiresAt: number }>
+    status(): Promise<{ signedIn: boolean; githubLogin?: string; expiresAt?: number; activeSeats?: number; maxActiveSeats?: number; mintsRemaining?: number; resetAt?: number }>
+    signOut(): Promise<void>
+  }
   /**
    * Enter host mode over the relay: connect and return a pairing offer string to hand to a client.
    * Rejects if the device is not entitled (or a dev build without the relay URL). `projectId` is the

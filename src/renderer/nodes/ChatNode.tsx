@@ -65,12 +65,14 @@ export default function ChatNode({ id, data, selected }: NodeProps<CanvasNode>) 
     // fork:true; once the driver's `session` event persists chatSessionId, forkFrom is ignored.
     const sessionId = own ?? forkFrom
     const accountId = data.accountId as string | undefined
+    const modelId = data.modelId as string | undefined
     if (sessionId) void api.chat.readTranscript(sessionId, data.cwd as string | undefined, accountId).then((m) => seed(id, m))
     void api.chat.ensure(id, {
       cwd: data.cwd as string | undefined,
       sessionId,
       fork: !own && !!forkFrom ? true : undefined,
-      accountId
+      accountId,
+      modelId
     })
     return off
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -345,7 +347,8 @@ export default function ChatNode({ id, data, selected }: NodeProps<CanvasNode>) 
               void api.chat.ensure(id, {
                 cwd: data.cwd as string | undefined,
                 sessionId: data.chatSessionId as string | undefined,
-                accountId: data.accountId as string | undefined
+                accountId: data.accountId as string | undefined,
+                modelId: data.modelId as string | undefined
               })
             }}
           >

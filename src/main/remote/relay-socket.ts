@@ -102,6 +102,8 @@ export type ConnectRelayOptions = {
   // Single-use pairing token; gates entry at the relay (query param).
   token: string
   role: 'host' | 'client'
+  /** Opaque hosted-relay session token. Sent only on host WebSocket upgrades. */
+  hostSessionToken?: string
   // Our long-lived (host) or ephemeral (client) NaCl keypair.
   ourKeys: KeyPair
   // The peer's public key, base64. REQUIRED for the client (it must know the
@@ -202,7 +204,7 @@ export function connectRelay(opts: ConnectRelayOptions): RelaySocket {
     // Append `?token=` so the relay can read the pairing token from the query
     // string. Preserve any existing query.
     const sep = opts.url.includes('?') ? '&' : '?'
-    return `${opts.url}${sep}token=${encodeURIComponent(opts.token)}`
+    return `${opts.url}${sep}token=${encodeURIComponent(opts.token)}&role=${opts.role}`
   }
 
   function openConnection(): void {
@@ -223,7 +225,7 @@ export function connectRelay(opts: ConnectRelayOptions): RelaySocket {
       // transports — production reconnect goes through the real ws path.
       transport = opts.transport
     } else {
-      transport = openWebSocketTransport(buildUrl())
+      transport = openWebSocketTransport(buildUrl(), opts.role === 'host' ? opts.hostSessionToken : undefined)
     }
 
     transport.onMessage((data) => handleMessage(data))
@@ -695,11 +697,11 @@ export function wrapWebSocket(ws: import('ws').WebSocket): RelayTransport {
 // Open a `ws` WebSocket to `url` and return it wrapped. Sends start only once
 // the socket is open; messages before open are dropped (the handshake retries on
 // reconnect). Used as the production default when no transport is injected.
-function openWebSocketTransport(url: string): RelayTransport {
+function openWebSocketTransport(url: string, hostSessionToken?: string): RelayTransport {
   // Lazy require so test/pure consumers don't pull in the native-ish dep.
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const WS = require('ws') as typeof import('ws')
-  const ws = new WS.WebSocket(url)
+  const ws = new WS.WebSocket(url, hostSessionToken ? { headers: { authorization: `Bearer ${hostSessionToken}` } } : undefined)
   ws.binaryType = 'nodebuffer'
   const wrapped = wrapWebSocket(ws)
   // Buffer sends issued before 'open'.

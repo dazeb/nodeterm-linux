@@ -117,6 +117,11 @@ export interface NodeData {
    * NOT persisted (like initialCommand); once the node's own chatSessionId arrives it's ignored.
    */
   forkFrom?: string
+  /**
+   * chat-only: which model config (from settings.chatModels) this chat node uses.
+   * When absent, the user must pick one before chatting.
+   */
+  modelId?: string
   [key: string]: unknown
 }
 
@@ -505,12 +510,12 @@ export function createBrowserNode(
   }
 }
 
-/** Creates an SDK-driven chat node (Claude conversation without a terminal). */
+/** Creates a chat node with the given LLM model config. */
 export function createChatNode(
   index: number,
   cwd?: string,
   center?: { x: number; y: number },
-  init?: { chatSessionId?: string; forkFrom?: string },
+  init?: { chatSessionId?: string; forkFrom?: string; modelId?: string },
   accountId?: string
 ): CanvasNode {
   return {
@@ -524,11 +529,11 @@ export function createChatNode(
       title: 'Chat',
       color: '#d97757', // clay, matches agent nodes
       group: null,
-      // Chat nodes are always Claude — stamp the account when one was resolved/inherited.
       ...(accountId ? { accountId } : {}),
       ...(cwd ? { cwd } : {}),
       ...(init?.chatSessionId ? { chatSessionId: init.chatSessionId } : {}),
-      ...(init?.forkFrom ? { forkFrom: init.forkFrom } : {})
+      ...(init?.forkFrom ? { forkFrom: init.forkFrom } : {}),
+      ...(init?.modelId ? { modelId: init.modelId } : {})
     }
   }
 }

@@ -10,6 +10,8 @@ import { DEFAULT_SETTINGS, type Settings } from '../shared/types'
  */
 export class SettingsStore {
   private cache: Settings = DEFAULT_SETTINGS
+  /** Called whenever settings are saved (used by chat driver to update model configs). */
+  onChange: ((s: Settings) => void) | null = null
 
   private get filePath(): string {
     return path.join(platform().userDataDir, 'settings.json')
@@ -33,6 +35,7 @@ export class SettingsStore {
     platform().handle(IPC.settingsLoad, () => this.cache)
     platform().handle(IPC.settingsSave, async (settings: Settings) => {
       this.cache = { ...DEFAULT_SETTINGS, ...settings }
+      this.onChange?.(this.cache)
       // Atomic write (temp + rename) so a mid-write crash can't corrupt settings.json.
       const tmp = `${this.filePath}.tmp`
       await fs.writeFile(tmp, JSON.stringify(this.cache, null, 2), 'utf-8')

@@ -54,6 +54,7 @@ export interface TelegramSessionInfo {
   /** The node id (= persistKey). This is what captureSession/sendInput expect, NOT the tmux name. */
   id: string
   title?: string
+  shell?: string
   cwd?: string
   /** Owning project id. */
   projectId?: string

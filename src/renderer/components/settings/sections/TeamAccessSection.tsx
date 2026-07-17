@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useEntitlement } from '../../../state/entitlement'
 import { useTeamAccess } from '../../../state/teamAccess'
 import { useTelegramBot } from '../../../state/telegramBot'
@@ -53,9 +53,59 @@ export function TeamAccessSection({
   const [busy, setBusy] = useState(false)
   const [atCap, setAtCap] = useState(false)
   const [error, setError] = useState('')
+  const [auth, setAuth] = useState<Awaited<ReturnType<typeof window.nodeTerminal.relayHost.auth.status>>>({ signedIn: false })
+  const [deviceFlow, setDeviceFlow] = useState<Awaited<ReturnType<typeof window.nodeTerminal.relayHost.auth.begin>> | null>(null)
+  const [authBusy, setAuthBusy] = useState(false)
 
   // Check if the Telegram bot is running (for the "Send via Telegram" button)
   const botUsername = useTelegramBot((s) => s.status.botUsername)
+
+  useEffect(() => {
+    if (!isActive) return
+    void window.nodeTerminal.relayHost.auth.status().then(setAuth).catch(() => setAuth({ signedIn: false }))
+  }, [isActive])
+
+  const beginGitHubAuth = async () => {
+    setAuthBusy(true)
+    setError('')
+    try {
+      setDeviceFlow(await window.nodeTerminal.relayHost.auth.begin())
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
+  const pollGitHubAuth = async () => {
+    if (!deviceFlow) return
+    setAuthBusy(true)
+    setError('')
+    try {
+      const result = await window.nodeTerminal.relayHost.auth.poll(deviceFlow.deviceCode)
+      if ('status' in result) {
+        setError('Waiting for GitHub authorization. Complete the browser step, then try again.')
+        return
+      }
+      setDeviceFlow(null)
+      setAuth(await window.nodeTerminal.relayHost.auth.status())
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
+  const signOutGitHub = async () => {
+    setAuthBusy(true)
+    try {
+      await window.nodeTerminal.relayHost.auth.signOut()
+      setAuth({ signedIn: false })
+      setDeviceFlow(null)
+    } finally {
+      setAuthBusy(false)
+    }
+  }
 
   const generateInvite = async () => {
     setError('')
@@ -90,6 +140,33 @@ export function TeamAccessSection({
       searchEntries={ENTRIES}
     >
       <SearchableRow {...ROWS.team}>
+        <div className="mb-5 space-y-3 rounded-lg border border-separator px-4 py-3">
+          {auth.signedIn ? (
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h4 className="text-[13px] font-medium text-text">GitHub host account</h4>
+                <p className="text-sm text-muted">
+                  Signed in as {auth.githubLogin}
+                  {auth.activeSeats !== undefined && auth.maxActiveSeats !== undefined ? ` · ${auth.activeSeats} / ${auth.maxActiveSeats} seats` : ''}
+                </p>
+              </div>
+              <Button disabled={authBusy} onClick={() => void signOutGitHub()}>Sign out</Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <h4 className="text-[13px] font-medium text-text">GitHub host account</h4>
+                <p className="text-sm text-muted">Sign in with GitHub to host Team Access invitations. Invitees do not need an account.</p>
+              </div>
+              {deviceFlow ? (
+                <div className="flex items-center gap-3">
+                  <code className="rounded bg-fill px-2 py-1 text-sm text-text">{deviceFlow.userCode}</code>
+                  <Button variant="primary" disabled={authBusy} onClick={() => void pollGitHubAuth()}>{authBusy ? 'Checking…' : 'I authorized GitHub'}</Button>
+                </div>
+              ) : <Button variant="primary" disabled={authBusy} onClick={() => void beginGitHubAuth()}>{authBusy ? 'Opening GitHub…' : 'Sign in with GitHub'}</Button>}
+            </div>
+          )}
+        </div>
         {!view.gated ? (
           <div className="space-y-5">
             {/* Seat counter */}

@@ -51,6 +51,8 @@ export interface RelayHostDeps {
   loadKeys?: () => Promise<KeyPair>
   /** Mint the single-use pairing token (defaults to the shared `mintPairingToken`). */
   mintToken?: (entitlement: string) => Promise<{ pairingToken: string }>
+  /** Production hosted-relay mint. The bearer token remains main-process-only. */
+  mintInvite?: () => Promise<{ pairingToken: string; hostSessionToken: string }>
   isPremium?: () => boolean
   relayAllowed?: () => boolean
   getEntitlement?: () => string | null
@@ -90,6 +92,7 @@ export function initRelayHost(
   const connect = deps.connect ?? connectRelayHost
   const loadKeys = deps.loadKeys ?? loadOrCreatePeerKeyPair
   const mintToken = deps.mintToken ?? mintPairingToken
+  const mintInvite = deps.mintInvite
   const isPremium = deps.isPremium ?? licenseIsPremium
   const relayAllowed = deps.relayAllowed ?? hostRelayAllowed
   const getEntitlement = deps.getEntitlement ?? getStoredEntitlement
@@ -117,14 +120,14 @@ export function initRelayHost(
    * plus the seat's renderer `id`.
    */
   async function addSeat({ projectId, email }: AddSeatOptions): Promise<{ offer: string; id: string }> {
-    if (!isPremium()) {
+    if (!mintInvite && !isPremium()) {
       throw new Error('Remote access requires nodeterm Pro.')
     }
     if (!relayAllowed()) {
       throw new Error('Remote access is unavailable in development builds (set NODETERM_RELAY_URL).')
     }
-    const entitlement = getEntitlement()
-    if (!entitlement) {
+    const entitlement = !mintInvite ? getEntitlement() : null
+    if (!mintInvite && !entitlement) {
       throw new Error('No entitlement found — please re-activate nodeterm Pro.')
     }
 
@@ -133,7 +136,7 @@ export function initRelayHost(
     // server-guaranteed limit: a host that patched it out only cheats itself (it is paying for the
     // seats). Real, un-bypassable enforcement is v2, server-side (the relay refuses the (seats+1)th
     // bridge per account). Do NOT close others here — Team Access is ADDITIVE.
-    if (!canAcceptSeat(byId.size, licensedSeats())) {
+    if (!mintInvite && !canAcceptSeat(byId.size, licensedSeats())) {
       throw new Error(E_SEATS_FULL)
     }
     // Reserve the seat SYNCHRONOUSLY — with a revocable id — before any await, so two concurrent
@@ -147,11 +150,13 @@ export function initRelayHost(
       // A locked keyring surfaces here as a rejected invite (PeerKeyLockedError / E_PEER_KEY_LOCKED):
       // the identity on disk is intact and must not be rotated — the renderer tells the human to unlock.
       const keys = await loadKeys()
-      const { pairingToken } = await mintToken(entitlement)
+      const hosted = mintInvite ? await mintInvite() : null
+      const pairingToken = hosted?.pairingToken ?? (await mintToken(entitlement!)).pairingToken
 
       const session = connect({
         url,
         token: pairingToken,
+        hostSessionToken: hosted?.hostSessionToken,
         ourKeys: keys,
         platform,
         transport: deps.transport,

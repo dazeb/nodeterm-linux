@@ -386,6 +386,12 @@ const api: NodeTerminalApi = {
     setPhoneAccess: (enabled) => ipcRenderer.send(IPC.remoteStandingHostSet, enabled)
   },
   relayHost: {
+    auth: {
+      begin: () => ipcRenderer.invoke(IPC.relayHostAuthBegin),
+      poll: (deviceCode: string) => ipcRenderer.invoke(IPC.relayHostAuthPoll, deviceCode),
+      status: () => ipcRenderer.invoke(IPC.relayHostAuthStatus),
+      signOut: () => ipcRenderer.invoke(IPC.relayHostAuthSignOut)
+    },
     start: (projectId?: string) => ipcRenderer.invoke(IPC.relayHostStart, projectId),
     invite: (opts?: { projectId?: string; email?: string }) =>
       ipcRenderer.invoke(IPC.relayHostInvite, opts ?? {}),

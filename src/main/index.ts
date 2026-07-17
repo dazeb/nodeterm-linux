@@ -53,6 +53,8 @@ import { initLicense, isPremium, getStoredEntitlement } from '../core/license'
 import { initTelegramBot } from '../core/telegram-bot'
 import type { TelegramSessionInfo } from '../core/telegram-bot'
 import { TelegramBotTokenStore } from './telegram-token-store'
+import { HostSessionStore } from './remote/host-session-store'
+import { HostedRelayClient } from './remote/hosted-relay-client'
 import { sessionName } from '../core/tmux-naming'
 import { initClaudeAccounts } from './claude-accounts'
 import { claudeCliCaps, registerClaudeCliIpc } from '../core/claude-cli'
@@ -420,6 +422,9 @@ app.whenReady().then(async () => {
 
   settingsStore.init()
   settingsStore.registerIpc()
+  // Feed model configs to the chat driver on init and whenever settings are saved.
+  chatDriver.updateModels(settingsStore.get().chatModels)
+  settingsStore.onChange = (s) => chatDriver.updateModels(s.chatModels)
   sshStore.registerIpc()
   ptyManager.init(() => settingsStore.get())
   ptyManager.registerIpc()
@@ -790,17 +795,12 @@ app.whenReady().then(async () => {
   corePlatform.handle(
     IPC.chatReadTranscript,
     async (
-      sessionId: string | undefined,
-      cwd: string | undefined,
-      accountId: string | undefined
+      _sessionId: string | undefined,
+      _cwd: string | undefined,
+      _accountId: string | undefined
     ) => {
-      const ref = sessionId ? remoteTranscriptBySession.get(sessionId) : undefined
-      if (ref) {
-        const text = await remoteFile.readTail(ref, REMOTE_TRANSCRIPT_CAP)
-        return parseChatMessages(text.split('\n'))
-      }
-      const p = await resolveTranscript(sessionId, cwd, accountId)
-      return p ? readChatMessages(p) : []
+      // Fork: the generic LLM driver doesn't persist sessions to disk.
+      return []
     }
   )
 
@@ -826,8 +826,7 @@ app.whenReady().then(async () => {
       accountId: string | undefined
     ) => buildHandoff({ sessionId, agentId, sourceNodeId, cwd, accountId })
   )
-  // Chat nodes: one long-lived Claude Agent SDK query per node, bridged over chat:* IPC. On the
-  // platform: the driver runs on THIS host, and a remote tab's chat node drives the same one.
+  // Chat nodes: OpenAI-compatible HTTP streaming driver per node, bridged over chat:* IPC.
   corePlatform.handle(IPC.chatEnsure, (nodeId: string, opts) => chatDriver.ensure(nodeId, opts))
   corePlatform.on(IPC.chatSend, (nodeId: string, text: string, images) =>
     chatDriver.send(nodeId, text, images))
@@ -1128,8 +1127,38 @@ app.whenReady().then(async () => {
   // Revocation reaches its sessions via `killRelayHostsByPeerKey` (peerRevoker, above).
   // Wire the lazily-constructed invite function into the telegram bot's deps so /invite works.
   {
-    const relayHost = initRelayHost(win, corePlatform, {})
+    const hostSessionStore = new HostSessionStore(join(app.getPath('userData'), 'hosted-relay-session.json'), safeStorage)
+    const hostedRelay = new HostedRelayClient()
+    const relayHost = initRelayHost(win, corePlatform, {
+      mintInvite: async () => {
+        const session = await hostSessionStore.load()
+        if (!session) throw new Error('Sign in with GitHub before creating a Team Access invite.')
+        const invite = await hostedRelay.mintInvite(session)
+        return { pairingToken: invite.pairingToken, hostSessionToken: session.token }
+      }
+    })
     relayInvite = (opts) => relayHost.invite(opts)
+    ipcMain.handle(IPC.relayHostAuthBegin, async () => {
+      const flow = await hostedRelay.beginDeviceFlow()
+      await shell.openExternal(flow.verificationUri)
+      return flow
+    })
+    ipcMain.handle(IPC.relayHostAuthPoll, async (_event, deviceCode: string) => {
+      const result = await hostedRelay.pollDeviceFlow(String(deviceCode ?? ''))
+      if ('status' in result) return result
+      await hostSessionStore.save(result)
+      return { signedIn: true as const, githubLogin: result.githubLogin, expiresAt: result.expiresAt }
+    })
+    ipcMain.handle(IPC.relayHostAuthStatus, async () => {
+      const session = await hostSessionStore.load()
+      if (!session) return { signedIn: false }
+      try { return await hostedRelay.status(session) } catch { return { signedIn: false } }
+    })
+    ipcMain.handle(IPC.relayHostAuthSignOut, async () => {
+      const session = await hostSessionStore.load()
+      if (session) await hostedRelay.signOut(session).catch(() => {})
+      await hostSessionStore.clear()
+    })
   }
   // Standing (phone) relay host: keep a host connection registered so a paired phone can reach
   // this Mac from anywhere. Honors settings.phoneAccessEnabled + the Pro gate internally.

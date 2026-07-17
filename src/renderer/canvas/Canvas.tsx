@@ -2294,7 +2294,7 @@ export function Canvas() {
   )
 
   const addChatNode = useCallback(
-    (center?: { x: number; y: number }, accountId?: string, groupId?: string) => {
+    (center?: { x: number; y: number }, accountId?: string, groupId?: string, modelId?: string) => {
       const project = useProjects.getState().getProject(activeProjectId)
       const cwd = cwdForNewNodeIn(groupId) ?? project?.cwd
       const account = resolveNewNodeAccount(
@@ -2303,7 +2303,8 @@ export function Canvas() {
         useSettings.getState().settings.claudeAccounts
       )
       setNodes((ns) => {
-        const node = createChatNode(ns.length, cwd, center ?? viewCenter(), undefined, account)
+        const node = createChatNode(ns.length, cwd, center ?? viewCenter(),
+          modelId ? { modelId } : undefined, account)
         return [...ns, groupId ? parentInto(node, groupId) : node]
       })
       markDirty()

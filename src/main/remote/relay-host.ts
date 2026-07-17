@@ -51,6 +51,7 @@ export interface RelayHostSession {
 export interface ConnectRelayHostOptions {
   url: string
   token: string
+  hostSessionToken?: string
   ourKeys: KeyPair
   platform: ElectronPlatform
   /** TEST ONLY: an in-process RelayTransport. Production opens a real ws (relay-socket.ts). */
@@ -171,6 +172,7 @@ export function connectRelayHost(opts: ConnectRelayHostOptions): RelayHostSessio
     url: opts.url,
     token: opts.token,
     role: 'host',
+    hostSessionToken: opts.hostSessionToken,
     ourKeys: opts.ourKeys,
     transport: opts.transport,
     onReady: () => {

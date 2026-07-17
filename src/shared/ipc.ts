@@ -242,6 +242,10 @@ export const IPC = {
   relayHostConfirm: 'relay:host:confirm',
   relayHostOpen: 'relay:host:open',
   relayHostClosed: 'relay:host:closed',
+  relayHostAuthBegin: 'relay:host:auth-begin',
+  relayHostAuthPoll: 'relay:host:auth-poll',
+  relayHostAuthStatus: 'relay:host:auth-status',
+  relayHostAuthSignOut: 'relay:host:auth-sign-out',
   // CLIENT side: connect to a host by its pairing offer (resolves a connectionId), the client half
   // of the same mutual-approval gate, and the raw frame pipe. `relayClientSas` pushes the channel
   // SAS main → renderer so the client human can compare it before the host approves;
