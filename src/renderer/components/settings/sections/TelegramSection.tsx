@@ -118,6 +118,12 @@ export function TelegramSection({ isActive }: { isActive: boolean }): React.JSX.
                   </span>
                 ) : null}
               </div>
+              {status.botIdMasked ? (
+                <p className="text-xs text-muted">
+                  Bot id (masked for privacy):{' '}
+                  <code className="bg-bg-tertiary px-1 rounded">{status.botIdMasked}</code>
+                </p>
+              ) : null}
               {qrData && (
                 <div className="space-y-1">
                   <img

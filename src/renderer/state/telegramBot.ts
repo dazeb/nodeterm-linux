@@ -26,7 +26,8 @@ const EMPTY_STATUS: TelegramBotStatus = {
   running: false,
   botUsername: null,
   error: null,
-  approvedUserCount: 0
+  approvedUserCount: 0,
+  botIdMasked: null
 }
 
 export const useTelegramBot = create<TelegramBotState>((set) => {

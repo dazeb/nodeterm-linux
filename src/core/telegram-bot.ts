@@ -9,6 +9,8 @@
 //   3. On accept → chat_id is pinned → user can use terminal commands
 //
 // The approved-user list is persisted at <userData>/telegram-approved.json.
+// The bot's own identity (numeric Telegram id + username) is persisted at
+// <userData>/telegram-bot-info.json. Only a masked form ever leaves the core.
 
 import { Telegraf, Markup } from 'telegraf'
 import type { Context } from 'telegraf'
@@ -36,7 +38,16 @@ import {
   claimPairingCode,
   pruneExpiredPairings
 } from './telegram-pairing'
+import type { TelegramPairingRequest } from './telegram-pairing'
 import type { TelegramApprovedUser } from './telegram-approved'
+import {
+  emptyTelegramBotInfo,
+  parseTelegramBotInfo,
+  setTelegramBotInfo,
+  maskBotId,
+  getTelegramBotId,
+  type TelegramBotInfoStore
+} from './telegram-bot-info'
 
 export interface TelegramSessionInfo {
   id: string
@@ -60,13 +71,16 @@ export interface TelegramBotDeps {
 let bot: Telegraf | null = null
 let deps: TelegramBotDeps | null = null
 let approvedFile: string | null = null
+let botInfoFile: string | null = null
 let botStatus: TelegramBotStatus = {
   running: false,
   botUsername: null,
   error: null,
-  approvedUserCount: 0
+  approvedUserCount: 0,
+  botIdMasked: null
 }
 let approvedStore: TelegramApprovedStore = emptyTelegramApproved()
+let botInfoStore: TelegramBotInfoStore = emptyTelegramBotInfo()
 /** Pending pairing codes keyed by 6-digit code. */
 const pendingPairings = new Map<string, TelegramPairingRequest>()
 
@@ -121,6 +135,40 @@ async function persistApproved(): Promise<void> {
   if (!approvedFile) return
   await saveApprovedToDisk(approvedFile, approvedStore)
   botStatus = { ...botStatus, approvedUserCount: approvedUserCount(approvedStore) }
+  broadcast()
+}
+
+/** Load the bot identity file from disk. Returns empty store if absent/malformed. */
+async function loadBotInfoFromDisk(filePath: string): Promise<TelegramBotInfoStore> {
+  try {
+    return parseTelegramBotInfo(JSON.parse(await fs.readFile(filePath, 'utf-8')))
+  } catch {
+    return emptyTelegramBotInfo()
+  }
+}
+
+/** Persist the bot identity file atomically (temp + rename, 0600). */
+async function saveBotInfoToDisk(filePath: string, store: TelegramBotInfoStore): Promise<void> {
+  const tmp = `${filePath}.tmp`
+  await fs.writeFile(tmp, JSON.stringify(store), { encoding: 'utf-8', mode: 0o600 })
+  await fs.rename(tmp, filePath)
+}
+
+/** Read the identity file and refresh the masked id in botStatus. */
+async function reloadBotInfo(): Promise<void> {
+  if (!botInfoFile) return
+  botInfoStore = await loadBotInfoFromDisk(botInfoFile)
+  botStatus = { ...botStatus, botIdMasked: maskBotId(getTelegramBotId(botInfoStore)) }
+  broadcast()
+}
+
+/** Record the bot's own identity (from getMe) to disk + status. Idempotent for
+ *  the same id; a changed username is the only thing it updates in place. */
+async function persistBotInfo(id: number, username: string): Promise<void> {
+  if (id <= 0 || !username.trim()) return
+  botInfoStore = setTelegramBotInfo(botInfoStore, id, username)
+  if (botInfoFile) await saveBotInfoToDisk(botInfoFile, botInfoStore)
+  botStatus = { ...botStatus, botIdMasked: maskBotId(getTelegramBotId(botInfoStore)) }
   broadcast()
 }
 
@@ -634,12 +682,22 @@ async function showTerminalOutput(
 
 // ── Bot lifecycle ───────────────────────────────────────────────────────────────
 
-async function startBot(token: string, filePath: string): Promise<void> {
+async function startBot(
+  token: string,
+  approvedFilePath: string,
+  infoFilePath: string
+): Promise<void> {
   if (bot) await stopBot()
 
   // Load approved users from disk
-  approvedFile = filePath
-  approvedStore = await loadApprovedFromDisk(filePath)
+  approvedFile = approvedFilePath
+  approvedStore = await loadApprovedFromDisk(approvedFilePath)
+
+  // Load the persisted bot identity so the masked id shows up immediately,
+  // even before getMe resolves (and survives a launch failure / restart).
+  botInfoFile = infoFilePath
+  botInfoStore = await loadBotInfoFromDisk(infoFilePath)
+
   prune()
 
   bot = new Telegraf(token)
@@ -657,15 +715,25 @@ async function startBot(token: string, filePath: string): Promise<void> {
       running: true,
       botUsername: bot?.botInfo?.username ?? null,
       error: null,
-      approvedUserCount: approvedUserCount(approvedStore)
+      approvedUserCount: approvedUserCount(approvedStore),
+      botIdMasked: maskBotId(getTelegramBotId(botInfoStore))
     }
     broadcast()
+    // Persist the freshly-fetched bot identity (id + username). No-op if launch
+    // didn't populate botInfo — the previously-persisted record (if any) is kept.
+    const info = bot?.botInfo
+    if (info && typeof info.id === 'number' && info.username) {
+      await persistBotInfo(info.id, info.username)
+      botStatus = { ...botStatus, botUsername: info.username }
+      broadcast()
+    }
   } catch (err) {
     botStatus = {
       running: false,
       botUsername: null,
       error: (err as Error).message,
-      approvedUserCount: approvedUserCount(approvedStore)
+      approvedUserCount: approvedUserCount(approvedStore),
+      botIdMasked: maskBotId(getTelegramBotId(botInfoStore))
     }
     broadcast()
     bot = null
@@ -682,7 +750,9 @@ async function stopBot(): Promise<void> {
     running: false,
     botUsername: null,
     error: null,
-    approvedUserCount: approvedUserCount(approvedStore)
+    approvedUserCount: approvedUserCount(approvedStore),
+    // Keep the masked id visible even while stopped (it's persisted, not a secret).
+    botIdMasked: maskBotId(getTelegramBotId(botInfoStore))
   }
   broadcast()
 }
@@ -697,11 +767,13 @@ export function initTelegramBot(
   const botToken = token || process.env.NODETERM_TELEGRAM_BOT_TOKEN || ''
   // Persisted at <userData>/telegram-approved.json
   const filePath = path.join(platform().userDataDir, 'telegram-approved.json')
+  // Bot identity (numeric id + username) persisted at <userData>/telegram-bot-info.json
+  const infoFilePath = path.join(platform().userDataDir, 'telegram-bot-info.json')
 
   // ── Renderer → main: start / stop / status ──
 
   platform().handle(IPC.telegramBotStart, async (tkn?: string) => {
-    await startBot(tkn || botToken, filePath)
+    await startBot(tkn || botToken, filePath, infoFilePath)
     return botStatus
   })
 
@@ -752,5 +824,5 @@ export function initTelegramBot(
   })
 
   // Auto-start if token is available from env
-  if (botToken) void startBot(botToken, filePath)
+  if (botToken) void startBot(botToken, filePath, infoFilePath)
 }

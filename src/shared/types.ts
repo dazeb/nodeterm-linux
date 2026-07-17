@@ -1095,6 +1095,9 @@ export interface TelegramBotStatus {
   error: string | null
   /** Number of approved (paired) Telegram users. */
   approvedUserCount: number
+  /** Masked display of the bot's own numeric Telegram id (last 4 digits only).
+   *  The raw id stays on the core side; the renderer never receives it. */
+  botIdMasked: string | null
 }
 
 /** A one-time Telegram pairing code pending desktop approval. */
