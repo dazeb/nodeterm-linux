@@ -50,6 +50,8 @@ import { initTelemetry } from './telemetry'
 import { initClaudeUsage } from './claude-usage'
 import { initLicense, isPremium, getStoredEntitlement } from '../core/license'
 import { initTelegramBot } from '../core/telegram-bot'
+import type { TelegramSessionInfo } from '../core/telegram-bot'
+import { sessionName } from '../core/tmux-naming'
 import { initClaudeAccounts } from './claude-accounts'
 import { claudeCliCaps, registerClaudeCliIpc } from '../core/claude-cli'
 import { claudeConfigDirFor } from '../core/claude-config-dir'
@@ -1031,18 +1033,46 @@ app.whenReady().then(async () => {
   let relayInvite: ((opts: { email?: string }) => Promise<{ offer: string; id: string }>) | undefined
   initTelegramBot({
     listSessions: async () => {
-      const ids = await ptyManager.listNodetermSessions().catch(() => [])
-      return ids.map((id) => ({
-        id,
-        title: id,
-        cwd: undefined
-      }))
+      // Drive the session list from the WORKSPACE (node id = persistKey), not from
+      // tmux session names: captureSession/sendText expect the node id, and passing
+      // the tmux name ("nt-…") double-prefixes / silently no-ops. The live-tmux set
+      // is only used to flag which terminals are currently running.
+      const ws = await workspaceStore.load({ sideline: false }).catch(() => null)
+      const liveTmux = new Set(await ptyManager.listNodetermSessions().catch(() => []))
+      if (!ws) return []
+      const out: TelegramSessionInfo[] = []
+      for (const p of ws.projects) {
+        if (p.unavailable || p.remote) continue // skip unreadable / relay-only tabs
+        for (const n of p.nodes) {
+          if (n.kind !== 'terminal') continue
+          out.push({
+            id: n.id,
+            title: n.title,
+            cwd: n.cwd ?? p.cwd ?? p.ssh?.remoteCwd,
+            projectId: p.id,
+            projectName: p.name,
+            agentId: n.agentId,
+            live: liveTmux.has(sessionName(n.id))
+          })
+        }
+      }
+      return out
+    },
+    listProjects: async () => {
+      const ws = await workspaceStore.load({ sideline: false }).catch(() => null)
+      if (!ws) return []
+      return ws.projects
+        .filter((p) => !p.unavailable && !p.remote)
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          cwd: p.cwd ?? p.ssh?.remoteCwd,
+          sessionCount: p.nodes.filter((n) => n.kind === 'terminal').length,
+          closed: p.closed === true
+        }))
     },
     captureSession: (sessionId) => ptyManager.captureSession(sessionId),
-    sendInput: (sessionId, text) => {
-      ptyManager.write(null, sessionId, text)
-      return Promise.resolve()
-    },
+    sendInput: (sessionId, text) => ptyManager.sendText(sessionId, text),
     inviteTeammate: (opts) => {
       if (!relayInvite) throw new Error('Relay host not yet initialized')
       return relayInvite(opts)

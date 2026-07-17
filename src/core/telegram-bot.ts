@@ -50,15 +50,40 @@ import {
 } from './telegram-bot-info'
 
 export interface TelegramSessionInfo {
+  /** The node id (= persistKey). This is what captureSession/sendInput expect, NOT the tmux name. */
   id: string
   title?: string
   cwd?: string
+  /** Owning project id. */
+  projectId?: string
+  /** Owning project name (tab title). */
+  projectName?: string
+  /** Agent id for agent nodes (claude/codex/gemini/…). */
+  agentId?: string
+  /** True when a live tmux session exists for this node right now. */
+  live?: boolean
+}
+
+export interface TelegramProjectInfo {
+  id: string
+  name: string
+  cwd?: string
+  /** Terminal-node count (live + persisted). */
+  sessionCount: number
+  /** Whether this project is closed (hidden tab — terminals may still run). */
+  closed?: boolean
 }
 
 export interface TelegramBotDeps {
+  /** List every terminal node across all projects, with project + agent metadata. */
   listSessions(): Promise<TelegramSessionInfo[]>
+  /** List projects (open + closed) with terminal counts. */
+  listProjects(): Promise<TelegramProjectInfo[]>
+  /** Capture a session's current screen. `sessionId` is the node id (persistKey). */
   captureSession(sessionId: string): Promise<string>
-  sendInput(sessionId: string, text: string): Promise<void>
+  /** Send text to a session. `sessionId` is the node id (persistKey). Returns false when
+   *  the session is gone / tmux unavailable. Implementations add Enter themselves. */
+  sendInput(sessionId: string, text: string): Promise<boolean>
   /**
    * Generate a Team Access invite via the relay host. Returns a pairing offer
    * the bot can forward to the user. Undefined when Pro is not available.
@@ -250,6 +275,7 @@ function registerCommands(b: Telegraf): void {
       ...(paired
         ? [
             '/terminals — List active sessions',
+            '/projects — List projects with terminal counts',
             '/attach N — View terminal N output',
             '/send N <text> — Send text to terminal N',
             '/log N [count] — Scrollback log for terminal N',
@@ -319,6 +345,17 @@ function registerCommands(b: Telegraf): void {
     await showTerminalList(ctx)
   })
 
+  // ── /projects — list projects with live terminal counts ──
+  b.command('projects', async (ctx: Context) => {
+    const chatId = ctx.from?.id ?? 0
+    const gate = requireApproved(chatId)
+    if (gate) {
+      await ctx.reply(gate, { reply_markup: mainMenu(false).reply_markup })
+      return
+    }
+    await showProjectList(ctx)
+  })
+
   // ── /attach N — capture session output ──
   b.command('attach', async (ctx: Context) => {
     const chatId = ctx.from?.id ?? 0
@@ -372,7 +409,13 @@ function registerCommands(b: Telegraf): void {
         await ctx.reply(`No terminal at index ${idx}.`)
         return
       }
-      await getDeps().sendInput(session.id, text + '\n')
+      const ok = await getDeps().sendInput(session.id, text)
+      if (!ok) {
+        await ctx.reply(`⚠️ Couldn't reach terminal #${idx} — the session may have ended.`, {
+          reply_markup: mainMenu(true).reply_markup
+        })
+        return
+      }
       await ctx.reply(`Sent to \`${session.title || session.id}\`: ${text}`, {
         parse_mode: 'Markdown',
         reply_markup: Markup.inlineKeyboard([
@@ -446,6 +489,7 @@ function registerCommands(b: Telegraf): void {
       ...(paired
         ? [
             '/terminals — List active sessions',
+            '/projects — List projects with terminal counts',
             '/attach N — View terminal N output',
             '/send N <text> — Send text to terminal N',
             '/log N [count] — Scrollback log for terminal N',
@@ -557,25 +601,15 @@ function registerCommands(b: Telegraf): void {
     }
   })
 
-  // Projects (placeholder — returns to menu)
+  // Projects — list projects with terminal counts
   b.action('menu_projects', async (ctx) => {
-    await ctx.editMessageText(
-      '📁 *Projects*\n\nProject visibility is coming in a future update.\n\n' +
-        'For now, use /terminals to see your active sessions.',
-      {
-        parse_mode: 'Markdown',
-        reply_markup: Markup.inlineKeyboard([
-          Markup.button.callback('📟 Terminals', 'menu_terminals'),
-          Markup.button.callback('← Back', 'menu_back')
-        ]).reply_markup
-      }
-    ).catch(() => {})
+    void showProjectList(ctx, true)
   })
 }
 
 // ── Rich menu helpers ───────────────────────────────────────────────────────────
 
-/** Fetch sessions and show an interactive terminal list. */
+/** Fetch sessions and show an interactive terminal list, grouped by project. */
 async function showTerminalList(ctx: Context, edit = false): Promise<void> {
   try {
     const sessions = await getDeps().listSessions()
@@ -599,22 +633,45 @@ async function showTerminalList(ctx: Context, edit = false): Promise<void> {
       return
     }
 
-    const lines = sessions.map(
-      (s, i) =>
-        `${i + 1}. ${s.title || 'unnamed'}${s.cwd ? ` — ${s.cwd}` : ''}`
-    )
-    const buttons = sessions.map((s, i) => [
-      Markup.button.callback(
-        `#${i + 1} ${(s.title || 'unnamed').slice(0, 20)}`,
-        `term_attach_${i + 1}`
-      )
-    ])
+    // Group by projectName (unknown → a bucket for terminals without a project).
+    const groups = new Map<string, { name: string; sessions: TelegramSessionInfo[] }>()
+    for (const s of sessions) {
+      const key = s.projectId ?? '__noproject__'
+      const name = s.projectId ? (s.projectName ?? 'Project') : 'No project'
+      let g = groups.get(key)
+      if (!g) {
+        g = { name, sessions: [] }
+        groups.set(key, g)
+      }
+      g.sessions.push(s)
+    }
+
+    const lines: string[] = []
+    const buttons: ReturnType<typeof Markup.button.callback>[][] = []
+    let idx = 0
+    for (const g of groups.values()) {
+      lines.push(`📁 *${g.name}*`)
+      for (const s of g.sessions) {
+        idx++
+        const agentTag = s.agentId ? ` [${s.agentId}]` : ''
+        const liveTag = s.live === false ? ' (offline)' : ''
+        lines.push(`  ${idx}. ${s.title || 'unnamed'}${agentTag}${liveTag}`)
+        buttons.push([
+          Markup.button.callback(
+            `#${idx} ${(s.title || 'unnamed').slice(0, 20)}`,
+            `term_attach_${idx}`
+          )
+        ])
+      }
+      lines.push('')
+    }
     buttons.push([
       Markup.button.callback('🔄 Refresh', 'term_refresh'),
+      Markup.button.callback('📁 Projects', 'menu_projects'),
       Markup.button.callback('← Back', 'menu_back')
     ])
 
-    const msg = `*Terminals:*\n${lines.join('\n')}`
+    const msg = `*Terminals (${sessions.length}):*\n${lines.join('\n').trim()}`
     if (edit) {
       await ctx.editMessageText(msg, {
         parse_mode: 'Markdown',
@@ -628,6 +685,65 @@ async function showTerminalList(ctx: Context, edit = false): Promise<void> {
     }
   } catch (err) {
     const fallback = 'Could not list sessions.'
+    if (edit) {
+      await ctx.editMessageText(fallback).catch(() => {})
+    } else {
+      await ctx.reply(fallback)
+    }
+  }
+}
+
+/** Fetch projects and show an interactive list with live terminal counts. */
+async function showProjectList(ctx: Context, edit = false): Promise<void> {
+  try {
+    const projects = await getDeps().listProjects()
+    if (projects.length === 0) {
+      const msg = 'No projects yet.\n\nOpen a folder in the nodeterm app to create one.'
+      if (edit) {
+        await ctx.editMessageText(msg, {
+          reply_markup: Markup.inlineKeyboard([
+            Markup.button.callback('📟 Terminals', 'menu_terminals'),
+            Markup.button.callback('← Back', 'menu_back')
+          ]).reply_markup
+        }).catch(() => {})
+      } else {
+        await ctx.reply(msg, {
+          reply_markup: Markup.inlineKeyboard([
+            Markup.button.callback('📟 Terminals', 'menu_terminals'),
+            Markup.button.callback('← Back', 'menu_back')
+          ]).reply_markup
+        })
+      }
+      return
+    }
+
+    const lines = projects.map((p, i) => {
+      const closedTag = p.closed ? ' (closed)' : ''
+      const cwd = p.cwd ? ` — ${p.cwd}` : ''
+      return `${i + 1}. ${p.name}${closedTag} — ${p.sessionCount} terminal${p.sessionCount !== 1 ? 's' : ''}${cwd}`
+    })
+    const buttons = projects.map((_p, i) => [
+      Markup.button.callback(`#${i + 1} terminals`, 'menu_terminals')
+    ])
+    buttons.push([
+      Markup.button.callback('🔄 Refresh', 'menu_projects'),
+      Markup.button.callback('← Back', 'menu_back')
+    ])
+
+    const msg = `*Projects (${projects.length}):*\n${lines.join('\n')}`
+    if (edit) {
+      await ctx.editMessageText(msg, {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: buttons }
+      }).catch(() => {})
+    } else {
+      await ctx.reply(msg, {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: buttons }
+      })
+    }
+  } catch (err) {
+    const fallback = 'Could not list projects.'
     if (edit) {
       await ctx.editMessageText(fallback).catch(() => {})
     } else {
