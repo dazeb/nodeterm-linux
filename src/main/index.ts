@@ -1082,6 +1082,7 @@ app.whenReady().then(async () => {
           out.push({
             id: n.id,
             title: n.title,
+            shell: n.shell,
             cwd: n.cwd ?? p.cwd ?? p.ssh?.remoteCwd,
             projectId: p.id,
             projectName: p.name,
@@ -1139,9 +1140,13 @@ app.whenReady().then(async () => {
     })
     relayInvite = (opts) => relayHost.invite(opts)
     ipcMain.handle(IPC.relayHostAuthBegin, async () => {
-      const flow = await hostedRelay.beginDeviceFlow()
-      await shell.openExternal(flow.verificationUri)
-      return flow
+      try {
+        const flow = await hostedRelay.beginDeviceFlow()
+        await shell.openExternal(flow.verificationUri)
+        return flow
+      } catch (error) {
+        throw new Error((error as Error).message)
+      }
     })
     ipcMain.handle(IPC.relayHostAuthPoll, async (_event, deviceCode: string) => {
       const result = await hostedRelay.pollDeviceFlow(String(deviceCode ?? ''))

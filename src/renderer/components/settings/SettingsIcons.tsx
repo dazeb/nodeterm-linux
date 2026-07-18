@@ -38,6 +38,13 @@ const PATHS: Record<SettingsSectionId, React.JSX.Element> = {
       <path d="M3.4 13c0-2.5 2.1-4 4.6-4s4.6 1.5 4.6 4" />
     </>
   ),
+  'chat-models': (
+    <>
+      <circle cx="8" cy="5.5" r="3.2" />
+      <path d="M4.5 12.5a3.5 3.5 0 0 1 7 0" />
+      <path d="M5 2 3.5.5M11 2 12.5.5M8 1V0" />
+    </>
+  ),
   'custom-agents': (
     <>
       <rect x="2.5" y="2.5" width="11" height="11" rx="2.5" />

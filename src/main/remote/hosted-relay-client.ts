@@ -57,6 +57,9 @@ export class HostedRelayClient {
       const body = await response.json().catch(() => ({})) as T & { error?: string }
       if (!response.ok) throw new Error(body.error ?? 'Hosted relay request failed.')
       return body
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Hosted relay request failed.') throw error
+      throw new Error('Cannot reach the hosted relay. The service is not deployed yet. Set NODETERM_RELAY_API_BASE to test locally.')
     } finally { clearTimeout(timer) }
   }
 }
