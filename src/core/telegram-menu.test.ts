@@ -11,7 +11,6 @@ import {
 } from './telegram-menu'
 
 const testSession = (overrides: Partial<TelegramSessionInfo> & { id: string }): TelegramSessionInfo => ({
-  id: overrides.id,
   title: '',
   shell: '',
   cwd: '',
@@ -50,11 +49,11 @@ describe('terminalLabel', () => {
 
 describe('projectLabel', () => {
   it('formats singular count', () => {
-    expect(projectLabel({ id: 'p1', name: 'API' }, 1)).toBe('API · 1 terminal')
+    expect(projectLabel({ name: 'API' }, 1)).toBe('API · 1 terminal')
   })
 
   it('formats plural count', () => {
-    expect(projectLabel({ id: 'p2', name: 'Web' }, 3)).toBe('Web · 3 terminals')
+    expect(projectLabel({ name: 'Web' }, 3)).toBe('Web · 3 terminals')
   })
 })
 
